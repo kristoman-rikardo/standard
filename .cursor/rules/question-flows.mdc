@@ -1,0 +1,16 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+The question flow is like this: 
+
+The user input is saved as last_utterance -> optimize question(optimizeSemantic)-> cutstom_embeddings -> analysis prompt -> 
+
+one of three alternatives: 
+1. extractStandard -> qo_filter.py 
+2. optimizeTextual -> qo_textual 
+3. qo_personal                          
+->
+
+the queryObject will be sent to retriever -> retrieve chunks from elasticsearch -> answer prompt and output to the user.

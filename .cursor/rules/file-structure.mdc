@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Always delete unused files, and delete sections we are no longer using. Rather edit existing files, or at least delete former files if committing to a new approach for your solution. Try to keep the number of lines to at maximum 300 lines, split the files in to smaller comprehensive parts if they grow much longer. 

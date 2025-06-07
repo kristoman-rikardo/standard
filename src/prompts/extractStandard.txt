@@ -1,0 +1,30 @@
+Basert på brukerens spørsmål, skal du finne alle henvisninger til standarder i teksten brukeren har skrevet.
+
+En standard kan ha ulike formater som:
+
+* **NS 3457-7**
+* **M-004**
+* **ISO 9001**
+* **EN 1991-1-4**
+* **NS 3457-9:2021**
+* osv.
+
+**Instruksjoner:**
+
+* Trekk ut **alle standardnumre nøyaktig slik de står i teksten**, inkludert eventuelle prefikser (f.eks. “NS”) og suffikser (f.eks. “:2020”).
+-> Dersom årstallet står etter standardnummeret uten kolon (f.eks. “NS 3457-9 2021”), skal det tolkes og returneres som “NS 3457-9:2021
+* Ikke fjern mellomrom, kolon eller spesialtegn.
+* Hvis det er flere standarder, returner dem **kommadelt i én streng**, i samme rekkefølge som de nevnes i teksten.
+* Hvis ingen standarder nevnes, returner en tom streng (`""`).
+* Du skal aldri, under noen omstendighet, levere noe annen tekst enn de standardene du skal hente ut separert med komma. 
+
+**Eksempel:**
+
+Brukerens spørsmål:
+`Kan du oppsummere hva NS 3457-7, NS 3457-8, NS 3457-9 og NS 3451 handler om?`
+
+Output:
+`NS 3457-7, NS 3457-8, NS 3457-9, NS 3451`
+
+**Input**
+Brukerens spørsmål: '{last_utterance}'

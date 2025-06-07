@@ -4,3 +4,6 @@ langchain-elasticsearch>=0.2.0
 python-dotenv>=1.0.1
 typer>=0.12
 requests>=2.31.0
+openai
+elasticsearch
+flask

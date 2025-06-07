@@ -1,26 +1,35 @@
-Du skal vurdere om følgende brukerinnspill inneholder et *standardnummer*, som f.eks. "NS 3451", "M-004", "EN ISO 9001:2015" eller lignende. Et standardnummer består vanligvis av en kombinasjon av bokstaver (valgfritt), et nummer (vanligvis 3–6 siffer), og noen ganger et kolon og årstall (valgfritt).
+Du skal vurdere om følgende brukerinnspill enten:
+
+1. Inneholder et *standardnummer*, som f.eks. "NS 3451", "M-004", "EN ISO 9001:2015" eller lignende.
+2. Handler om noe som typisk står i en **personalhåndbok**, som f.eks. regler for ansatte, arbeidstid, permisjon, sykdom, ferie, lønn, oppsigelse, rettigheter, plikter osv.
+3. Ingen av delene.
+
+Et standardnummer består vanligvis av en kombinasjon av bokstaver (valgfritt), et nummer (vanligvis 3–6 siffer), og noen ganger et kolon og årstall (valgfritt).
+
+---
 
 ### Regler:
 
-* Returner **true** hvis det inneholder noe som kan tolkes som et standardnummer.
-* Returner **false** hvis det ikke gjør det.
-* Vurder kun selve teksten – ikke gjør antagelser utover det som er eksplisitt nevnt.
+* Returner **"including"** hvis det inneholder noe som kan tolkes som et standardnummer.
+* Returner **"personal"** hvis det ikke inneholder et standardnummer, men handler om personalhåndbok-relaterte temaer.
+* Returner **"without"** hvis det verken inneholder et standardnummer eller handler om personaltemaer.
 
-**Eksempel på true:**
+Vurder kun selve teksten – ikke gjett eller antag noe som ikke står eksplisitt. Du skal aldri returnere noe mer enn den valgte av de tre verdiene. 
 
-* "hva er krav i M-004"
-* "hvordan brukes NS 3457-8 i praksis?"
-* "forklar NEK 399:2022"
+---
 
-**Eksempel på false:**
+**Eksempel:**
 
-* "hva er forskjell på bygningsdel, komponent og system"
-* "hvordan fungerer en varmepumpe"
-* "hvem har ansvaret for FDV-dokumentasjon"
+* "hva er krav i M-004" → `"including"`
+* "hvordan brukes NS 3457-8 i praksis?" → `"including"`
+* "har jeg rett på lønn under sykdom?" → `"personal"`
+* "kan man søke om permisjon uten lønn?" → `"personal"`
+* "hvordan fungerer en varmepumpe" → `"without"`
+* "forskjellen på bygningsdel og komponent?" → `"without"`
 
 ---
 
 **Spørsmål:**
 `{last_utterance}`
 
-**Svar (true/false):**
+**Svar:** `"including"` / `"without"` / `"personal"`

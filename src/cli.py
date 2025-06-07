@@ -1,21 +1,23 @@
-import typer
-import json
-from .chain import chain
+#!/usr/bin/env python3
+import sys
+from chain import chain
 
-def ask(question: str):
-    """Still et spørsmål til StandardGPT"""
+def main():
+    """Simple CLI interface for StandardGPT"""
+    if len(sys.argv) < 2:
+        print("Usage: python cli.py 'your question here'")
+        print("Example: python cli.py 'Hva er NS-EN ISO 14155?'")
+        return
+    
+    question = " ".join(sys.argv[1:])
+    print(f"🔍 Spørsmål: {question}")
+    print("📋 Behandler...")
+    
     try:
-        response = chain.invoke({"question": question})
-        
-        print(f"\n🤖 StandardGPT Svar:")
-        print(f"📝 Spørsmål: {response['question']}")
-        print(f"🔍 Analyse: {response['analysis']}")
-        print(f"✏️  Rewrite: {response['rewrite']}")
-        print(f"📚 Hentet dokumenter: {response['retrieved_docs']}")
-        print(f"\n💬 Svar:\n{response['answer']}")
-        
+        result = chain(question)
+        print(f"💬 Svar: {result}")
     except Exception as e:
-        typer.echo(f"❌ Feil: {e}", err=True)
+        print(f"❌ Feil: {e}")
 
 if __name__ == "__main__":
-    typer.run(ask) 
+    main() 

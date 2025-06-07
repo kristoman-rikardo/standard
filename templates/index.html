@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StandardGPT - Norske Standarder AI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .input-section {
+            margin-bottom: 30px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        #questionInput {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        #questionInput:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+
+        #askButton {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        #askButton:hover {
+            transform: translateY(-2px);
+        }
+
+        #askButton:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .results-section {
+            display: none;
+        }
+
+        .answer-box, .debug-box {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .answer-box {
+            border-left: 4px solid #28a745;
+        }
+
+        .debug-box {
+            border-left: 4px solid #17a2b8;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+
+        .answer-content {
+            line-height: 1.6;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .debug-content {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            background: #000;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error-box {
+            background: #fff5f5;
+            border: 1px solid #feb2b2;
+            border-left: 4px solid #e53e3e;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            color: #c53030;
+        }
+
+        .examples {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 8px;
+        }
+
+        .example-item {
+            margin-bottom: 10px;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .example-item:hover {
+            background: #e2e8f0;
+        }
+
+        .toggle-btn {
+            background: #495057;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .toggle-btn:hover {
+            background: #343a40;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 StandardGPT</h1>
+            <p>AI-assistent for norske standarder med full debug-visning</p>
+        </div>
+
+        <div class="main-content">
+            <div class="input-section">
+                <div class="input-group">
+                    <input type="text" id="questionInput" placeholder="Still ditt spørsmål om norske standarder..." />
+                    <button id="askButton">🚀 Spør</button>
+                </div>
+
+                <div class="examples">
+                    <div class="section-title">💡 Eksempler:</div>
+                    <div class="example-item" onclick="useExample('Hva sier NS-EN ISO 14155 om temperaturkrav?')">
+                        Hva sier NS-EN ISO 14155 om temperaturkrav?
+                    </div>
+                    <div class="example-item" onclick="useExample('Hva sier standardene om sikkerhet?')">
+                        Hva sier standardene om sikkerhet?
+                    </div>
+                    <div class="example-item" onclick="useExample('Hvordan måles nettovolum i henhold til standarder?')">
+                        Hvordan måles nettovolum i henhold til standarder?
+                    </div>
+                </div>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>StandardGPT behandler ditt spørsmål...</p>
+            </div>
+
+            <div class="results-section" id="results">
+                <div class="answer-box">
+                    <div class="section-title">🤖 Svar fra StandardGPT</div>
+                    <div class="answer-content" id="answerContent"></div>
+                </div>
+
+                <div class="debug-box">
+                    <button class="toggle-btn" onclick="toggleDebug()">🔍 Vis/Skjul Debug Output</button>
+                    <div class="section-title">🔧 Debug Output (alle steg)</div>
+                    <div class="debug-content" id="debugContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isDebugVisible = true;
+
+        function useExample(question) {
+            document.getElementById('questionInput').value = question;
+        }
+
+        function toggleDebug() {
+            const debugContent = document.getElementById('debugContent');
+            isDebugVisible = !isDebugVisible;
+            debugContent.style.display = isDebugVisible ? 'block' : 'none';
+        }
+
+        async function askQuestion() {
+            const question = document.getElementById('questionInput').value.trim();
+            
+            if (!question) {
+                alert('Vennligst skriv inn et spørsmål');
+                return;
+            }
+
+            // Vis loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('askButton').disabled = true;
+
+            try {
+                const response = await fetch('/api/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question: question })
+                });
+
+                const data = await response.json();
+
+                // Skjul loading
+                document.getElementById('loading').style.display = 'none';
+
+                if (data.error) {
+                    // Vis feil
+                    document.getElementById('results').innerHTML = `
+                        <div class="error-box">
+                            <div class="section-title">❌ Feil</div>
+                            <p>${data.error}</p>
+                            ${data.debug_output ? `<pre style="margin-top: 15px; font-size: 12px;">${data.debug_output}</pre>` : ''}
+                        </div>
+                    `;
+                } else {
+                    // Vis resultater
+                    document.getElementById('answerContent').innerHTML = data.answer;
+                    document.getElementById('debugContent').textContent = data.debug_output;
+                }
+
+                document.getElementById('results').style.display = 'block';
+
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('results').innerHTML = `
+                    <div class="error-box">
+                        <div class="section-title">❌ Tilkoblingsfeil</div>
+                        <p>Kunne ikke koble til serveren: ${error.message}</p>
+                    </div>
+                `;
+                document.getElementById('results').style.display = 'block';
+            }
+
+            document.getElementById('askButton').disabled = false;
+        }
+
+        // Event listeners
+        document.getElementById('askButton').addEventListener('click', askQuestion);
+        document.getElementById('questionInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                askQuestion();
+            }
+        });
+
+        // Focus på input når siden laster
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('questionInput').focus();
+        });
+    </script>
+</body>
+</html> 
