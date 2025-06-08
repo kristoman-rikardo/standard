@@ -3,341 +3,293 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StandardGPT - Norske Standarder AI</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+    <title>StandardGPT - Intelligent Standard Search</title>
+    <meta name="description" content="Få svar på spørsmål om norske og internasjonale standarder med AI-drevet søk">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="msapplication-TileColor" content="#3b82f6">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    
+    <!-- Preload critical resources -->
+    <link rel="preload" href="{{ url_for('static', filename='css/main.css') }}" as="style">
+    <link rel="preload" href="{{ url_for('static', filename='js/app.js') }}" as="script">
+    
+    <!-- CSS -->
+    {% if config.DEBUG %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    {% else %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.min.css') }}">
+    {% endif %}
+    
+    <!-- PWA Meta Tags -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="StandardGPT">
+    <meta name="application-name" content="StandardGPT">
+    <meta name="msapplication-starturl" content="/">
+    <meta name="msapplication-navbutton-color" content="#3b82f6">
+    
+    <!-- Apple Touch Icons -->
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/icon-180x180.png') }}">
+    <link rel="apple-touch-icon" sizes="152x152" href="{{ url_for('static', filename='img/icon-152x152.png') }}">
+    <link rel="apple-touch-icon" sizes="144x144" href="{{ url_for('static', filename='img/icon-144x144.png') }}">
+    <link rel="apple-touch-icon" sizes="120x120" href="{{ url_for('static', filename='img/icon-120x120.png') }}">
+    <link rel="apple-touch-icon" sizes="114x114" href="{{ url_for('static', filename='img/icon-114x114.png') }}">
+    <link rel="apple-touch-icon" sizes="76x76" href="{{ url_for('static', filename='img/icon-76x76.png') }}">
+    <link rel="apple-touch-icon" sizes="72x72" href="{{ url_for('static', filename='img/icon-72x72.png') }}">
+    <link rel="apple-touch-icon" sizes="60x60" href="{{ url_for('static', filename='img/icon-60x60.png') }}">
+    <link rel="apple-touch-icon" sizes="57x57" href="{{ url_for('static', filename='img/icon-57x57.png') }}">
+    
+    <!-- Standard Icons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/icon-32x32.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/icon-16x16.png') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}">
+    
+    <!-- Microsoft Tiles -->
+    <meta name="msapplication-TileImage" content="{{ url_for('static', filename='img/icon-144x144.png') }}">
+    <meta name="msapplication-square70x70logo" content="{{ url_for('static', filename='img/icon-70x70.png') }}">
+    <meta name="msapplication-square150x150logo" content="{{ url_for('static', filename='img/icon-150x150.png') }}">
+    <meta name="msapplication-wide310x150logo" content="{{ url_for('static', filename='img/icon-310x150.png') }}">
+    <meta name="msapplication-square310x310logo" content="{{ url_for('static', filename='img/icon-310x310.png') }}">
+    
+    <!-- Open Graph / Social Media -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="StandardGPT - Intelligent Standard Search">
+    <meta property="og:description" content="AI-drevet søk i norske og internasjonale standarder">
+    <meta property="og:image" content="{{ url_for('static', filename='img/og-image.png', _external=True) }}">
+    <meta property="og:url" content="{{ request.url }}">
+    <meta property="og:site_name" content="StandardGPT">
+    <meta property="og:locale" content="no_NO">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="StandardGPT - Intelligent Standard Search">
+    <meta name="twitter:description" content="AI-drevet søk i norske og internasjonale standarder">
+    <meta name="twitter:image" content="{{ url_for('static', filename='img/twitter-card.png', _external=True) }}">
+    
+    <!-- Security Headers -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+    
+    <!-- DNS Prefetch for performance -->
+    <link rel="dns-prefetch" href="//fonts.googleapis.com">
+    <link rel="dns-prefetch" href="//api.openai.com">
+    
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "StandardGPT",
+        "description": "AI-drevet søk i norske og internasjonale standarder",
+        "url": "{{ request.url_root }}",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Any",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "NOK"
+        },
+        "author": {
+            "@type": "Organization",
+            "name": "StandardGPT"
         }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            overflow: hidden;
-        }
-
-        .header {
-            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
-
-        .header p {
-            font-size: 1.1em;
-            opacity: 0.9;
-        }
-
-        .main-content {
-            padding: 30px;
-        }
-
-        .input-section {
-            margin-bottom: 30px;
-        }
-
-        .input-group {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-
-        #questionInput {
-            flex: 1;
-            padding: 15px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s ease;
-        }
-
-        #questionInput:focus {
-            border-color: #667eea;
-            outline: none;
-        }
-
-        #askButton {
-            padding: 15px 30px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s ease;
-        }
-
-        #askButton:hover {
-            transform: translateY(-2px);
-        }
-
-        #askButton:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .results-section {
-            display: none;
-        }
-
-        .answer-box, .debug-box {
-            background: #f8f9fa;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-
-        .answer-box {
-            border-left: 4px solid #28a745;
-        }
-
-        .debug-box {
-            border-left: 4px solid #17a2b8;
-            max-height: 500px;
-            overflow-y: auto;
-        }
-
-        .section-title {
-            font-size: 1.3em;
-            font-weight: 600;
-            margin-bottom: 15px;
-            color: #2c3e50;
-        }
-
-        .answer-content {
-            line-height: 1.6;
-            font-size: 16px;
-            color: #333;
-        }
-
-        .debug-content {
-            font-family: 'Monaco', 'Menlo', monospace;
-            font-size: 12px;
-            line-height: 1.4;
-            background: #000;
-            color: #00ff00;
-            padding: 15px;
-            border-radius: 5px;
-            white-space: pre-wrap;
-            overflow-x: auto;
-        }
-
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 20px;
-        }
-
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .error-box {
-            background: #fff5f5;
-            border: 1px solid #feb2b2;
-            border-left: 4px solid #e53e3e;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            color: #c53030;
-        }
-
-        .examples {
-            margin-top: 20px;
-            padding: 20px;
-            background: #f7fafc;
-            border-radius: 8px;
-        }
-
-        .example-item {
-            margin-bottom: 10px;
-            padding: 10px;
-            background: white;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-        }
-
-        .example-item:hover {
-            background: #e2e8f0;
-        }
-
-        .toggle-btn {
-            background: #495057;
-            color: white;
-            border: none;
-            padding: 8px 15px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-bottom: 10px;
-        }
-
-        .toggle-btn:hover {
-            background: #343a40;
-        }
-    </style>
+    }
+    </script>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🎯 StandardGPT</h1>
-            <p>AI-assistent for norske standarder med full debug-visning</p>
-        </div>
+    <!-- Skip to main content for accessibility -->
+    <a href="#main-content" class="skip-link">Hopp til hovedinnhold</a>
+    
+    <!-- Application Container -->
+    <div class="app-container">
+        <!-- Header Section -->
+        <header class="app-header">
+            <div class="header-content">
+                <h1 class="header-title">🔍 StandardGPT</h1>
+                <p class="header-description">
+                    Intelligent søk i norske og internasjonale standarder
+                </p>
+            </div>
+        </header>
 
-        <div class="main-content">
-            <div class="input-section">
-                <div class="input-group">
-                    <input type="text" id="questionInput" placeholder="Still ditt spørsmål om norske standarder..." />
-                    <button id="askButton">🚀 Spør</button>
+        <!-- Main Content -->
+        <main id="main-content" class="main-content">
+            <!-- Input Section -->
+            <section class="input-section" aria-label="Søkeskjema">
+                <div class="input-container">
+                    <label for="questionInput" class="input-label">
+                        Still ditt spørsmål om standarder
+                    </label>
+                    <div class="input-wrapper">
+                        <textarea 
+                            id="questionInput" 
+                            class="question-input"
+                            placeholder="F.eks. Hva sier NS-EN ISO 14155 om temperaturkrav?"
+                            rows="3"
+                            maxlength="1000"
+                            aria-describedby="input-help"
+                        ></textarea>
+                        <div class="input-actions">
+                            <button 
+                                id="submitBtn" 
+                                class="btn btn-primary submit-btn"
+                                type="button"
+                                aria-describedby="submit-help"
+                            >
+                                🚀 Spør StandardGPT
+                            </button>
+                            <button 
+                                id="clearBtn" 
+                                class="btn btn-secondary clear-btn"
+                                type="button"
+                                title="Tøm alle felt"
+                            >
+                                🗑️ Tøm
+                            </button>
+                        </div>
+                    </div>
+                    <div class="input-help" id="input-help">
+                        <span class="help-text">Minimum 3 tegn, maksimum 1000 tegn</span>
+                        <span class="help-shortcut">Trykk Ctrl+K for å fokusere</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Examples Section -->
+            <section class="examples-section" aria-label="Eksempler på spørsmål">
+                <h2 class="examples-title">💡 Eksempler på spørsmål</h2>
+                <div id="examplesContainer" class="examples-grid">
+                    <!-- Examples will be loaded by JavaScript -->
+                </div>
+            </section>
+
+            <!-- Loading State -->
+            <section id="loadingContainer" class="loading-container" aria-live="polite" aria-label="Laster svar">
+                <div class="loading-content">
+                    <div class="spinner" aria-hidden="true"></div>
+                    <h3 class="loading-title">Søker i standarder...</h3>
+                    <p class="loading-description">
+                        Analyserer spørsmålet ditt og finner relevante standarder
+                    </p>
+                    <button 
+                        class="btn btn-secondary mt-4" 
+                        onclick="app.cancelRequest()"
+                        id="cancelBtn"
+                    >
+                        ⏹️ Avbryt
+                    </button>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section id="resultsContainer" class="results-container" aria-live="polite" aria-label="Søkeresultater">
+                <!-- Answer Card -->
+                <div class="result-card answer-card">
+                    <div class="result-header">
+                        <h3>📋 Svar</h3>
+                        <div class="result-actions">
+                            <button 
+                                id="debugToggle" 
+                                class="btn btn-sm btn-secondary"
+                                title="Vis/skjul teknisk informasjon"
+                            >
+                                🔍 Skjul Debug
+                            </button>
+                        </div>
+                    </div>
+                    <div class="result-content">
+                        <div id="answerContent" class="answer-content">
+                            <!-- Answer will be populated by JavaScript -->
+                        </div>
+                        
+                        <!-- Status Information -->
+                        <div class="status-info">
+                            <div class="status-row">
+                                <span class="status-label">Prosesseringstid:</span>
+                                <span id="processingTime" class="status-value">-</span>
+                            </div>
+                            <div class="status-row">
+                                <span class="status-label">Sikkerhet:</span>
+                                <span id="securityStatus" class="status-value">-</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="examples">
-                    <div class="section-title">💡 Eksempler:</div>
-                    <div class="example-item" onclick="useExample('Hva sier NS-EN ISO 14155 om temperaturkrav?')">
-                        Hva sier NS-EN ISO 14155 om temperaturkrav?
+                <!-- Debug Card -->
+                <div class="result-card debug-card">
+                    <div class="result-header">
+                        <h4>🔧 Teknisk informasjon</h4>
                     </div>
-                    <div class="example-item" onclick="useExample('Hva sier standardene om sikkerhet?')">
-                        Hva sier standardene om sikkerhet?
+                    <div class="result-content">
+                        <pre id="debugContent" class="debug-content">
+                            <!-- Debug info will be populated by JavaScript -->
+                        </pre>
                     </div>
-                    <div class="example-item" onclick="useExample('Hvordan måles nettovolum i henhold til standarder?')">
-                        Hvordan måles nettovolum i henhold til standarder?
-                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="result-actions-bottom">
+                    <button 
+                        class="btn btn-primary" 
+                        onclick="app.focusInput()"
+                    >
+                        ➕ Still nytt spørsmål
+                    </button>
+                    <button 
+                        class="btn btn-secondary" 
+                        onclick="window.print()"
+                    >
+                        🖨️ Skriv ut
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <div class="footer-content">
+                <p class="footer-text">
+                    StandardGPT bruker AI for å søke i norske og internasjonale standarder.
+                    Kontroller alltid opplysningene mot original standardtekst.
+                </p>
+                <div class="footer-links">
+                    <a href="#" class="footer-link">Om StandardGPT</a>
+                    <a href="#" class="footer-link">Personvern</a>
+                    <a href="#" class="footer-link">Tilgjengelighet</a>
                 </div>
             </div>
-
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <p>StandardGPT behandler ditt spørsmål...</p>
-            </div>
-
-            <div class="results-section" id="results">
-                <div class="answer-box">
-                    <div class="section-title">🤖 Svar fra StandardGPT</div>
-                    <div class="answer-content" id="answerContent"></div>
-                </div>
-
-                <div class="debug-box">
-                    <button class="toggle-btn" onclick="toggleDebug()">🔍 Vis/Skjul Debug Output</button>
-                    <div class="section-title">🔧 Debug Output (alle steg)</div>
-                    <div class="debug-content" id="debugContent"></div>
-                </div>
-            </div>
-        </div>
+        </footer>
     </div>
 
+    <!-- Error Boundary for JavaScript -->
+    <noscript>
+        <div class="no-js-message">
+            <h2>JavaScript kreves</h2>
+            <p>StandardGPT krever JavaScript for å fungere. Vennligst aktiver JavaScript i nettleseren din.</p>
+        </div>
+    </noscript>
+
+    <!-- JavaScript -->
+    {% if config.DEBUG %}
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+    {% else %}
+    <script src="{{ url_for('static', filename='js/app.min.js') }}" defer></script>
+    {% endif %}
+    
+    <!-- Performance and Analytics (if needed) -->
     <script>
-        let isDebugVisible = true;
-
-        function useExample(question) {
-            document.getElementById('questionInput').value = question;
-        }
-
-        function toggleDebug() {
-            const debugContent = document.getElementById('debugContent');
-            isDebugVisible = !isDebugVisible;
-            debugContent.style.display = isDebugVisible ? 'block' : 'none';
-        }
-
-        async function askQuestion() {
-            const question = document.getElementById('questionInput').value.trim();
-            
-            if (!question) {
-                alert('Vennligst skriv inn et spørsmål');
-                return;
+        // Performance monitoring
+        window.addEventListener('load', () => {
+            if ('performance' in window) {
+                const loadTime = performance.timing.loadEventEnd - performance.timing.navigationStart;
+                console.log('Page load time:', loadTime + 'ms');
             }
-
-            // Vis loading
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('results').style.display = 'none';
-            document.getElementById('askButton').disabled = true;
-
-            try {
-                const response = await fetch('/api/query', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ question: question })
-                });
-
-                const data = await response.json();
-
-                // Skjul loading
-                document.getElementById('loading').style.display = 'none';
-
-                if (data.error) {
-                    // Vis feil
-                    document.getElementById('results').innerHTML = `
-                        <div class="error-box">
-                            <div class="section-title">❌ Feil</div>
-                            <p>${data.error}</p>
-                            ${data.debug_output ? `<pre style="margin-top: 15px; font-size: 12px;">${data.debug_output}</pre>` : ''}
-                        </div>
-                    `;
-                } else {
-                    // Vis resultater
-                    document.getElementById('answerContent').innerHTML = data.answer;
-                    document.getElementById('debugContent').textContent = data.debug_output;
-                }
-
-                document.getElementById('results').style.display = 'block';
-
-            } catch (error) {
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('results').innerHTML = `
-                    <div class="error-box">
-                        <div class="section-title">❌ Tilkoblingsfeil</div>
-                        <p>Kunne ikke koble til serveren: ${error.message}</p>
-                    </div>
-                `;
-                document.getElementById('results').style.display = 'block';
-            }
-
-            document.getElementById('askButton').disabled = false;
-        }
-
-        // Event listeners
-        document.getElementById('askButton').addEventListener('click', askQuestion);
-        document.getElementById('questionInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                askQuestion();
-            }
-        });
-
-        // Focus på input når siden laster
-        document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('questionInput').focus();
         });
     </script>
 </body>

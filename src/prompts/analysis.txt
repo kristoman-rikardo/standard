@@ -14,7 +14,7 @@ Et standardnummer består vanligvis av en kombinasjon av bokstaver (valgfritt), 
 * Returner **"personal"** hvis det ikke inneholder et standardnummer, men handler om personalhåndbok-relaterte temaer.
 * Returner **"without"** hvis det verken inneholder et standardnummer eller handler om personaltemaer.
 
-Vurder kun selve teksten – ikke gjett eller antag noe som ikke står eksplisitt. Du skal aldri returnere noe mer enn den valgte av de tre verdiene. 
+Vurder kun selve teksten – ikke gjett eller antag noe som ikke står eksplisitt. Du skal aldri returnere noe mer enn den valgte av de tre verdiene, uten anførselstegn eller noe som helst annen tekst. 
 
 ---
 
@@ -26,6 +26,7 @@ Vurder kun selve teksten – ikke gjett eller antag noe som ikke står eksplisit
 * "kan man søke om permisjon uten lønn?" → `"personal"`
 * "hvordan fungerer en varmepumpe" → `"without"`
 * "forskjellen på bygningsdel og komponent?" → `"without"`
+* "når har vi lunsjpause?" → "personal"
 
 ---
 

@@ -1,0 +1,155 @@
+version: '3.8'
+
+services:
+  # StandardGPT Flask applikasjon
+  app:
+    build: .
+    container_name: standardgpt-app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+    volumes:
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - standardgpt-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Elasticsearch for søkefunksjonalitet
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    container_name: standardgpt-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - standardgpt-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Redis for rate limiting og caching
+  redis:
+    image: redis:7-alpine
+    container_name: standardgpt-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - standardgpt-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+  # Nginx reverse proxy og load balancer
+  nginx:
+    image: nginx:alpine
+    container_name: standardgpt-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./static:/var/www/static:ro
+    depends_on:
+      - app
+    networks:
+      - standardgpt-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus for metrics (valgfritt)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: standardgpt-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - standardgpt-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  # Grafana for visualisering (valgfritt)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: standardgpt-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - standardgpt-network
+    depends_on:
+      - prometheus
+
+# Nettverk
+networks:
+  standardgpt-network:
+    driver: bridge
+    name: standardgpt-network
+
+# Volumes for persistent data
+volumes:
+  elasticsearch-data:
+    driver: local
+    name: standardgpt-elasticsearch-data
+  redis-data:
+    driver: local
+    name: standardgpt-redis-data
+  prometheus-data:
+    driver: local
+    name: standardgpt-prometheus-data
+  grafana-data:
+    driver: local
+    name: standardgpt-grafana-data 

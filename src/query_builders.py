@@ -36,10 +36,10 @@ class QueryObjectBuilder:
     
     def build_filter_query(self, standard_numbers, last_utterance, embeddings=None, debug=True):
         """
-        Build query object for standard number filtering
+        Build query object for standard number filtering with multi-standard support
         
         Args:
-            standard_numbers (str): Comma-separated standard numbers
+            standard_numbers (str or list): Standard numbers to filter by
             last_utterance (str): Original user question
             embeddings (list): Optional embeddings for semantic search
             debug (bool): Enable debug logging
@@ -53,8 +53,13 @@ class QueryObjectBuilder:
             if not self.query_objects["filter"]:
                 raise ImportError("qo_filter module not available")
             
-            # Clean standard numbers
-            standards = [s.strip() for s in standard_numbers.split(",") if s.strip()]
+            # Handle both string and list inputs for standard numbers
+            if isinstance(standard_numbers, list):
+                standards = [s.strip() for s in standard_numbers if s.strip()]
+            elif isinstance(standard_numbers, str):
+                standards = [s.strip() for s in standard_numbers.split(",") if s.strip()]
+            else:
+                standards = []
             
             # Create query object using qo_filter
             if hasattr(self.query_objects["filter"], "create_query"):
@@ -75,7 +80,7 @@ class QueryObjectBuilder:
                             "minimum_should_match": 1
                         }
                     },
-                    "size": 10,
+                    "size": 80,
                     "_source": ["content", "standard_number", "title"]
                 }
                 
@@ -90,7 +95,7 @@ class QueryObjectBuilder:
                         }
                     })
             
-            log_step_end("5a", "Build Filter Query", f"Query for {len(standards)} standards", debug)
+            log_step_end("5a", "Build Filter Query", f"Query for {len(standards)} standards: {standards}", debug)
             return query_object
             
         except Exception as e:

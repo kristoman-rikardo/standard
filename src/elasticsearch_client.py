@@ -34,7 +34,7 @@ class ElasticsearchClient:
         if ELASTICSEARCH_API_KEY:
             # For Elasticsearch Cloud - use the complete API key as is
             self.headers = {
-                "Authorization": ELASTICSEARCH_API_KEY,  # Use directly
+                "Authorization": ELASTICSEARCH_API_KEY,  # Use directly as it already contains "ApiKey " prefix
                 "Content-Type": "application/json"
             }
         elif ELASTICSEARCH_USER and ELASTICSEARCH_PASSWORD:

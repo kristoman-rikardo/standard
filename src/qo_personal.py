@@ -2,64 +2,19 @@
 Query object builder for personal handbook search
 """
 
-import json   # bare nødvendig hvis du vil ha en ren JSON-streng til slutt
-
-# ---------------------------------------------------------
-# 1. Inndata
-vectors = "Vektor som Pythonliste fra custom_embeddings.py"   # eksempel­vektor
-
-# ---------------------------------------------------------
-# 2. Bygg spørringen
-queryObject = {
-    "size": 80,
-    "query": {
-        "script_score": {
-            "query": {
-                "bool": {
-                    "filter": {
-                        "wildcard": {
-                            "reference.keyword": {
-                                "value": "*Personalhåndbok*",
-                                "case_insensitive": True
-                            }
-                        }
-                    }
-                }
-            },
-            "script": {
-                "source": "cosineSimilarity(params.query_vector, 'vector') + 1.0",
-                "params": {
-                    "query_vector": vectors
-                }
-            }
-        }
-    },
-    "_source": ["text", "reference", "page"]
-}
-
-# ---------------------------------------------------------
-# 3. (Valgfritt) gjøres om til JSON-streng
-queryObject_json = json.dumps(queryObject, ensure_ascii=False)
-
-# ---------------------------------------------------------
-# 4. Eksempel på bruk
-# from elasticsearch import Elasticsearch
-# es = Elasticsearch("http://localhost:9200")
-# response = es.search(index="ditt_index", body=queryObject)
-
-def create_query(question: str, embeddings: list = None):
+def create_query(text: str, embeddings: list = None):
     """
-    Create query object for personal handbook search
+    Create query object for personal handbook search exactly as specified by user
     
     Args:
-        question (str): User's question (not used in this query type)
+        text (str): Search text (usually last utterance or optimized text)
         embeddings (list): Vector embeddings from API
         
     Returns:
         dict: Complete Elasticsearch query object
     """
     
-    # If we have valid embeddings, use script_score, otherwise use simple wildcard
+    # Build query exactly as specified by user for personal handbook
     if embeddings and any(x != 0.0 for x in embeddings):
         query_object = {
             "size": 80,
@@ -88,7 +43,7 @@ def create_query(question: str, embeddings: list = None):
             "_source": ["text", "reference", "page"]
         }
     else:
-        # Fallback to simple wildcard query without embeddings
+        # Fallback without embeddings - still needs the filter structure
         query_object = {
             "size": 80,
             "query": {

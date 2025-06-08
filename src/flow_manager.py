@@ -2,7 +2,7 @@
 Main flow manager for StandardGPT
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 from src.prompt_manager import PromptManager
 from src.query_builders import QueryObjectBuilder
 from src.elasticsearch_client import ElasticsearchClient
@@ -14,6 +14,89 @@ from src.debug_utils import (
     log_routing_decision,
     format_summary
 )
+import os
+import re
+import json
+import time
+import logging
+from dataclasses import dataclass
+
+@dataclass
+class ValidationResult:
+    """Result of input validation"""
+    is_valid: bool
+    error_message: Optional[str] = None
+    sanitized_input: Optional[str] = None
+
+class InputValidator:
+    """Comprehensive input validation for StandardGPT"""
+    
+    # Security patterns to detect potential attacks
+    DANGEROUS_PATTERNS = [
+        r'<script[^>]*>.*?</script>',  # XSS attempts
+        r'javascript:',                # JavaScript injection
+        r'data:text/html',            # Data URI attacks
+        r'vbscript:',                 # VBScript injection
+        r'on\w+\s*=',                 # Event handlers
+        r'eval\s*\(',                 # Code evaluation
+        r'exec\s*\(',                 # Code execution
+        r'import\s+',                 # Python imports
+        r'__\w+__',                   # Python dunder methods
+        r'\.\./',                     # Path traversal
+        r'[<>"\']',                   # Basic HTML/SQL chars
+    ]
+    
+    @staticmethod
+    def validate_question(question: str) -> ValidationResult:
+        """Validate and sanitize user question"""
+        if not question or not isinstance(question, str):
+            return ValidationResult(False, "Spørsmål må være en ikke-tom tekst")
+        
+        # Length validation
+        if len(question.strip()) < 3:
+            return ValidationResult(False, "Spørsmål må være minst 3 tegn langt")
+        
+        if len(question) > 1000:
+            return ValidationResult(False, "Spørsmål kan ikke være lengre enn 1000 tegn")
+        
+        # Security validation
+        question_lower = question.lower()
+        for pattern in InputValidator.DANGEROUS_PATTERNS:
+            if re.search(pattern, question_lower, re.IGNORECASE):
+                return ValidationResult(False, "Spørsmål inneholder ikke-tillatte tegn eller mønstre")
+        
+        # Character validation - allow Norwegian characters
+        allowed_pattern = r'^[a-zA-ZæøåÆØÅ0-9\s\-\.\,\?\!\:\;\(\)\[\]\/\+\*\=\%\&\#\@\_\~\`\^\$\|\\]*$'
+        if not re.match(allowed_pattern, question):
+            return ValidationResult(False, "Spørsmål inneholder ikke-tillatte spesialtegn")
+        
+        # Sanitize input
+        sanitized = question.strip()
+        sanitized = re.sub(r'\s+', ' ', sanitized)  # Normalize whitespace
+        
+        return ValidationResult(True, sanitized_input=sanitized)
+    
+    @staticmethod
+    def validate_standard_numbers(standards: List[str]) -> ValidationResult:
+        """Validate extracted standard numbers"""
+        if not standards or not isinstance(standards, list):
+            return ValidationResult(True, sanitized_input=[])
+        
+        sanitized_standards = []
+        standard_pattern = r'^[A-Z]{1,10}[\s\-]?[0-9]{1,10}(?:[\:\+][0-9A-Z\-]{1,20})?$'
+        
+        for std in standards:
+            if not isinstance(std, str):
+                continue
+            
+            std_clean = std.strip().upper()
+            if len(std_clean) > 50:  # Reasonable limit
+                continue
+            
+            if re.match(standard_pattern, std_clean):
+                sanitized_standards.append(std_clean)
+        
+        return ValidationResult(True, sanitized_input=sanitized_standards)
 
 class FlowManager:
     """Main flow manager for StandardGPT query processing"""
@@ -23,164 +106,208 @@ class FlowManager:
         self.prompt_manager = PromptManager()
         self.query_builder = QueryObjectBuilder()
         self.elasticsearch_client = ElasticsearchClient()
+        self.validator = InputValidator()
+        
+        # Setup secure logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.StreamHandler(),
+                logging.FileHandler('standardgpt.log', mode='a')
+            ]
+        )
+        self.logger = logging.getLogger(__name__)
     
-    def process_query(self, last_utterance: str, debug: bool = True) -> Dict[str, Any]:
+    async def process_query(self, question: str, debug: bool = True) -> Dict[str, Any]:
         """
-        Process query through the complete flow
+        Process query through the complete flow with multi-standard support
         
         Args:
-            last_utterance (str): User's question
-            debug (bool): Enable debug logging
+            question: User's question
+            debug: Enable debug output
             
         Returns:
-            dict: Result with answer and metadata
+            dict: Complete processing result with answer
         """
-        debug_print("FlowManager", "Starting StandardGPT query processing", debug)
+        start_time = time.time()
+        result = {"answer": "Kunne ikke generere svar"}
+        debug_output = []
         
         try:
-            result = {"question": last_utterance}
+            debug_output.append("=== StandardGPT Query Processing ===")
+            debug_output.append(f"Question: {question}")
             
-            # Step 1: Optimize semantic 
-            result["optimized"] = self.prompt_manager.execute_optimize_semantic(last_utterance, debug)
-            
-            # Step 2: Get embeddings
-            result["embeddings"] = self.elasticsearch_client.get_embeddings_from_api(result["optimized"], debug)
-            
-            # Step 3: Analysis
-            result["analysis"] = self.prompt_manager.execute_analysis(last_utterance, debug)
-            
-            # Debug routing decision
+            # Step 0: Input Validation
             if debug:
-                debug_print("ROUTING DECISION", f"Analysis result: {result['analysis']}", debug)
-                if "including" in result["analysis"].lower():
-                    debug_print("ROUTING DECISION", "Route taken: including (standard number search)", debug)
-                elif "without" in result["analysis"].lower():
-                    debug_print("ROUTING DECISION", "Route taken: without (textual search)", debug)
-                else:
-                    debug_print("ROUTING DECISION", "Route taken: personal (handbook search)", debug)
+                print(f"\n🔒 DEBUG - STEG 0: Input Validation - START:")
+                print("=" * 50)
+                print(f"Input: {question[:100]}{'...' if len(question) > 100 else ''}")
+                print("=" * 50)
             
-            # Route to appropriate handler
-            if "including" in result["analysis"].lower():
-                result = self._handle_including_route(result, last_utterance, debug)
-            elif "without" in result["analysis"].lower():
-                result = self._handle_without_route(result, last_utterance, debug)
-            else:
-                result = self._handle_personal_route(result, last_utterance, debug)
-            
-            # Step 5: Execute Elasticsearch search
-            result["elasticsearch_response"] = self.elasticsearch_client.search(result["query_object"], debug)
-            
-            # Step 5.1: Format chunks from Elasticsearch response
-            result["chunks"] = self.elasticsearch_client.format_chunks(result["elasticsearch_response"], debug)
-            
-            # Debug chunks information
-            if debug:
-                hits = result.get('elasticsearch_response', {}).get('hits', {}).get('hits', [])
-                debug_print("CHUNKS INFORMATION", f"Number of chunks: {len(hits)}", debug)
-                debug_print("CHUNKS INFORMATION", f"Formatted chunks length: {len(result['chunks'])}", debug)
+            validation_result = self.validator.validate_question(question)
+            if not validation_result.is_valid:
+                error_msg = f"Input validation failed: {validation_result.error_message}"
+                self.logger.warning(f"Invalid input rejected: {error_msg}")
                 
-                # Show sample chunks
-                for i, hit in enumerate(hits[:3]):  # Show first 3 chunks
-                    source = hit.get("_source", {})
-                    score = hit.get("_score", 0)
-                    debug_print("CHUNK SAMPLE", f"Chunk {i+1}: Score={score:.2f}, Reference={source.get('reference', 'N/A')}, Content={source.get('text', '')[:200]}...", debug)
+                if debug:
+                    print(f"\n🔒 DEBUG - STEG 0: Input Validation - FAILED:")
+                    print("=" * 50)
+                    print(f"❌ {validation_result.error_message}")
+                    print("=" * 50)
+                
+                return {
+                    "answer": validation_result.error_message,
+                    "error": error_msg,
+                    "processing_time": time.time() - start_time,
+                    "debug": "\n".join(debug_output) if debug else "",
+                    "security_sanitized": True
+                }
             
-            # Step 6: Generate final answer
-            result["answer"] = self.prompt_manager.execute_answer(last_utterance, result["chunks"], debug)
+            # Use sanitized input
+            sanitized_question = validation_result.sanitized_input
+            
+            if debug:
+                print(f"\n🔒 DEBUG - STEG 0: Input Validation - OUTPUT:")
+                print("=" * 50)
+                print(f"✅ Input validated and sanitized")
+                print(f"Original length: {len(question)}, Sanitized length: {len(sanitized_question)}")
+                print("=" * 50)
+            
+            # 1. Semantic optimization
+            debug_output.append("\n=== OPTIMIZATION PHASE ===")
+            optimized = await self.prompt_manager.optimize_semantic(sanitized_question)
+            debug_output.append(f"✓ Semantic optimization: {optimized}")
+            result["optimized"] = optimized
+            
+            # 2. Get embeddings
+            debug_output.append("\n=== EMBEDDINGS PHASE ===")
+            embeddings = self.elasticsearch_client.get_embeddings_from_api(optimized, debug)
+            debug_output.append(f"✓ Embeddings retrieved: {len(embeddings) if embeddings else 0} dimensions")
+            result["embeddings"] = embeddings
+            
+            # 3. Extract standard numbers and analyze question
+            debug_output.append("\n=== ANALYSIS PHASE ===")
+            
+            # Extract standard numbers - handle both single and multiple standards
+            standard_numbers = await self.prompt_manager.extract_standard_numbers(sanitized_question)
+            if isinstance(standard_numbers, str) and standard_numbers.strip():
+                # Convert single standard to list for consistent handling
+                standard_numbers = [s.strip() for s in standard_numbers.split(',') if s.strip()]
+            elif not isinstance(standard_numbers, list):
+                standard_numbers = []
+            
+            validation_result = self.validator.validate_standard_numbers(standard_numbers)
+            if not validation_result.is_valid:
+                error_msg = f"Standard validation failed: {validation_result.error_message}"
+                self.logger.warning(f"Invalid standard rejected: {error_msg}")
+                return {
+                    "answer": "Beklager, det oppstod en feil under behandling av standardene. Vennligst prøv igjen senere.",
+                    "error": error_msg,
+                    "processing_time": time.time() - start_time,
+                    "debug": "\n".join(debug_output) if debug else "",
+                    "security_sanitized": True
+                }
+            
+            sanitized_standard_numbers = validation_result.sanitized_input
+            
+            debug_output.append(f"✓ Extracted {len(sanitized_standard_numbers)} standard number(s): {sanitized_standard_numbers}")
+            
+            # Analyze question type
+            analysis = await self.prompt_manager.analyze_question(sanitized_question)
+            debug_output.append(f"✓ Question analysis: {analysis}")
+            
+            # 4. Routing decision based on analysis
+            if sanitized_standard_numbers and len(sanitized_standard_numbers) > 0:
+                route = "including"
+                debug_output.append(f"✓ Route: FILTER - Focusing on standard(s): {', '.join(sanitized_standard_numbers)}")
+            elif "personal" in analysis.lower() or "personalhåndbok" in analysis.lower():
+                route = "personal"
+                debug_output.append("✓ Route: PERSONAL - Searching personal handbook")
+            else:
+                route = "without"
+                debug_output.append("✓ Route: TEXTUAL - General text search")
+            
+            result["route_taken"] = route
+            result["analysis"] = analysis
+            result["standard_numbers"] = sanitized_standard_numbers
+            
+            # 5. Build query based on route
+            debug_output.append(f"\n=== QUERY BUILDING PHASE ===")
+            
+            if route == "including":
+                # Multi-standard filter query
+                result["query_object"] = self.query_builder.build_filter_query(
+                    sanitized_standard_numbers, 
+                    sanitized_question, 
+                    embeddings, 
+                    debug
+                )
+                debug_output.append(f"✓ Built filter query for {len(sanitized_standard_numbers)} standard(s)")
+                
+            elif route == "without":
+                # Textual search query
+                optimized_text = await self.prompt_manager.optimize_textual(sanitized_question)
+                result["query_object"] = self.query_builder.build_textual_query(
+                    optimized_text, 
+                    embeddings, 
+                    debug
+                )
+                debug_output.append(f"✓ Built textual query with optimized text: {optimized_text}")
+                
+            else:  # personal
+                # Personal handbook query
+                result["query_object"] = self.query_builder.build_personal_query(
+                    sanitized_question, 
+                    embeddings, 
+                    debug
+                )
+                debug_output.append("✓ Built personal handbook query")
+            
+            # Validate query object
+            self.query_builder.validate_query_object(result["query_object"], route)
+            
+            # 6. Execute Elasticsearch search
+            debug_output.append("\n=== SEARCH PHASE ===")
+            elasticsearch_response = self.elasticsearch_client.search(result["query_object"], debug)
+            result["elasticsearch_response"] = elasticsearch_response
+            
+            # Format chunks from response
+            chunks = self.elasticsearch_client.format_chunks(elasticsearch_response, debug)
+            result["chunks"] = chunks
+            
+            hits = elasticsearch_response.get('hits', {}).get('hits', [])
+            debug_output.append(f"✓ Search completed: {len(hits)} hits returned")
+            debug_output.append(f"✓ Formatted {len(chunks)} chunks for answer generation")
+            
+            # Sample chunks for debugging
+            for i, hit in enumerate(hits[:3]):
+                source = hit.get("_source", {})
+                score = hit.get("_score", 0)
+                debug_output.append(f"  - Chunk {i+1}: Score={score:.2f}, Ref={source.get('reference', 'N/A')[:50]}...")
+            
+            # 7. Generate final answer
+            debug_output.append("\n=== ANSWER GENERATION PHASE ===")
+            answer = await self.prompt_manager.generate_answer(sanitized_question, chunks)
+            result["answer"] = answer or "Kunne ikke generere et fullstendig svar basert på tilgjengelig informasjon."
+            
+            debug_output.append(f"✓ Final answer generated ({len(result['answer'])} characters)")
+            debug_output.append("\n=== PROCESSING COMPLETE ===")
+            
+            if debug:
+                for line in debug_output:
+                    print(line)
             
             return result
             
         except Exception as e:
-            log_error("FlowManager", f"Error in query processing: {str(e)}", debug)
-            return {"answer": f"Beklager, det oppstod en feil under behandling av spørsmålet: {str(e)}"}
-    
-    def _handle_including_route(self, result: Dict[str, Any], last_utterance: str, debug: bool) -> Dict[str, Any]:
-        """
-        Handle the 'including' route - standard number search
-        
-        Args:
-            result: Current processing result
-            last_utterance: Original user question
-            debug: Debug flag
-            
-        Returns:
-            dict: Updated result with query object
-        """
-        result["route_taken"] = "including (standard number search)"
-        log_routing_decision(result["analysis"], result["route_taken"], debug)
-        
-        # Step 4a: Extract standard numbers
-        standard_numbers = self.prompt_manager.execute_extract_standard(last_utterance, debug)
-        
-        # Build filter query object
-        result["query_object"] = self.query_builder.build_filter_query(
-            standard_numbers, 
-            last_utterance, 
-            result["embeddings"], 
-            debug
-        )
-        
-        # Validate query object
-        self.query_builder.validate_query_object(result["query_object"], "filter")
-        
-        return result
-    
-    def _handle_without_route(self, result: Dict[str, Any], last_utterance: str, debug: bool) -> Dict[str, Any]:
-        """
-        Handle the 'without' route - textual search
-        
-        Args:
-            result: Current processing result
-            last_utterance: Original user question
-            debug: Debug flag
-            
-        Returns:
-            dict: Updated result with query object
-        """
-        result["route_taken"] = "without (textual search)"
-        log_routing_decision(result["analysis"], result["route_taken"], debug)
-        
-        # Step 4b: Optimize for textual search
-        optimized_text = self.prompt_manager.execute_optimize_textual(last_utterance, debug)
-        
-        # Build textual query object
-        result["query_object"] = self.query_builder.build_textual_query(
-            optimized_text, 
-            result["embeddings"], 
-            debug
-        )
-        
-        # Validate query object
-        self.query_builder.validate_query_object(result["query_object"], "textual")
-        
-        return result
-    
-    def _handle_personal_route(self, result: Dict[str, Any], last_utterance: str, debug: bool) -> Dict[str, Any]:
-        """
-        Handle the 'personal' route - personal handbook search
-        
-        Args:
-            result: Current processing result
-            last_utterance: Original user question
-            debug: Debug flag
-            
-        Returns:
-            dict: Updated result with query object
-        """
-        result["route_taken"] = "personal (handbook search)"
-        log_routing_decision(result["analysis"], result["route_taken"], debug)
-        
-        # Step 4c: Build personal query object
-        result["query_object"] = self.query_builder.build_personal_query(
-            last_utterance, 
-            result["embeddings"], 
-            debug
-        )
-        
-        # Validate query object
-        self.query_builder.validate_query_object(result["query_object"], "personal")
-        
-        return result
+            error_msg = f"Query processing failed: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            return {
+                "answer": "Beklager, det oppstod en feil under behandling av spørsmålet ditt. Vennligst prøv igjen senere.",
+                "error": error_msg,
+                "processing_time": time.time() - start_time
+            }
     
     def health_check(self, debug: bool = True) -> Dict[str, bool]:
         """

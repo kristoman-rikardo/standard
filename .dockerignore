@@ -1,0 +1,79 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+PRODUCTION_GUIDE.md
+
+# Development files
+.vscode/
+.cursor/
+*.pyc
+__pycache__/
+.pytest_cache/
+.coverage
+.env.example
+
+# Logs
+*.log
+logs/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Node modules (if any)
+node_modules/
+npm-debug.log*
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Monitoring (will be mounted as volumes)
+monitoring/
+
+# Nginx config (will be mounted as volume)
+nginx/ 

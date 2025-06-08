@@ -242,4 +242,70 @@ class PromptManager:
             
         except Exception as e:
             log_error("Generate Answer", str(e), debug)
-            raise 
+            raise
+    
+    async def optimize_semantic(self, question: str) -> str:
+        """
+        Async wrapper for semantic optimization
+        
+        Args:
+            question: User's question to optimize
+            
+        Returns:
+            str: Optimized question for semantic search
+        """
+        return self.execute_optimize_semantic(question, debug=False)
+    
+    async def analyze_question(self, question: str) -> str:
+        """
+        Async wrapper for question analysis
+        
+        Args:
+            question: User's question to analyze
+            
+        Returns:
+            str: Analysis result for routing
+        """
+        return self.execute_analysis(question, debug=False)
+    
+    async def extract_standard_numbers(self, question: str) -> List[str]:
+        """
+        Async wrapper for standard number extraction with multi-standard support
+        
+        Args:
+            question: User's question to extract standards from
+            
+        Returns:
+            List[str]: List of extracted standard numbers
+        """
+        result = self.execute_extract_standard(question, debug=False)
+        if isinstance(result, str) and result.strip():
+            # Split by comma and clean up each standard number
+            standards = [s.strip() for s in result.split(',') if s.strip()]
+            return standards
+        return []
+    
+    async def optimize_textual(self, question: str) -> str:
+        """
+        Async wrapper for textual optimization
+        
+        Args:
+            question: User's question to optimize for textual search
+            
+        Returns:
+            str: Optimized text for textual search
+        """
+        return self.execute_optimize_textual(question, debug=False)
+    
+    async def generate_answer(self, question: str, chunks: str) -> str:
+        """
+        Async wrapper for answer generation
+        
+        Args:
+            question: Original user question
+            chunks: Formatted chunks from Elasticsearch
+            
+        Returns:
+            str: Generated answer
+        """
+        return self.execute_answer(question, chunks, debug=False) 
