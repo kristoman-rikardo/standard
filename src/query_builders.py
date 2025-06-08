@@ -182,7 +182,7 @@ class QueryObjectBuilder:
             # Create query object using qo_personal
             if hasattr(self.query_objects["personal"], "create_query"):
                 query_object = self.query_objects["personal"].create_query(
-                    question=last_utterance,
+                    text=last_utterance,
                     embeddings=embeddings
                 )
             else:
