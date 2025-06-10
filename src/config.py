@@ -22,6 +22,11 @@ EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", "")
 
 # OpenAI Configuration  
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.0"))
+
+# Specialized model configuration
+OPENAI_MODEL_DEFAULT = os.getenv("OPENAI_MODEL_DEFAULT", "gpt-4o")  # For optimization, analysis, extraction
+OPENAI_MODEL_ANSWER = os.getenv("OPENAI_MODEL_ANSWER", "gpt-4.1")  # For final answer generation
 
 # Fallback credentials for basic auth
 ELASTICSEARCH_USER = os.getenv("ELASTICSEARCH_USER", "")

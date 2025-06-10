@@ -39,7 +39,7 @@ class Config:
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
     OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o')
     OPENAI_MAX_TOKENS = int(os.environ.get('OPENAI_MAX_TOKENS', '2048'))
-    OPENAI_TEMPERATURE = float(os.environ.get('OPENAI_TEMPERATURE', '0.3'))
+    OPENAI_TEMPERATURE = float(os.environ.get('OPENAI_TEMPERATURE', '0.0'))
     
     # Input validation
     MAX_QUESTION_LENGTH = int(os.environ.get('MAX_QUESTION_LENGTH', '1000'))

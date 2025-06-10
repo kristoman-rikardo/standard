@@ -7,7 +7,7 @@ import json
 import requests
 import openai
 from langchain.prompts import PromptTemplate
-from src.config import OPENAI_MODEL, OPENAI_API_KEY
+from src.config import OPENAI_MODEL, OPENAI_API_KEY, OPENAI_TEMPERATURE, OPENAI_MODEL_DEFAULT, OPENAI_MODEL_ANSWER
 from src.debug_utils import log_step_start, log_step_end, log_error, debug_print
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
@@ -22,23 +22,38 @@ class PromptManager:
         self.model = OPENAI_MODEL
         self.prompts = self._load_all_prompts()
     
-    def _call_openai(self, messages: List[Dict], temperature: float = 0) -> str:
+    def _call_openai(self, messages: List[Dict], temperature: float = OPENAI_TEMPERATURE, model: str = None) -> str:
         """
         Call OpenAI API with modern syntax
         
         Args:
             messages: List of message dicts for OpenAI
-            temperature: Temperature for response generation
+            temperature: Temperature for response generation (default from config)
+            model: OpenAI model to use (defaults to OPENAI_MODEL_DEFAULT)
             
         Returns:
             str: Generated response content
         """
+        if model is None:
+            model = OPENAI_MODEL_DEFAULT
+            
+        # Set appropriate max_tokens based on model
+        if "gpt-4.1" in model:
+            max_tokens = 4096
+        elif "gpt-4-turbo" in model:
+            max_tokens = 4096
+        else:
+            max_tokens = 8000
+            
         try:
+            if hasattr(self, '_debug_enabled') and self._debug_enabled:
+                debug_print("OpenAI", f"Using model: {model} (max_tokens: {max_tokens})")
+                
             response = self.client.chat.completions.create(
-                model=self.model,
+                model=model,
                 messages=messages,
                 temperature=temperature,
-                max_tokens=1000
+                max_tokens=max_tokens
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
@@ -100,7 +115,7 @@ class PromptManager:
         Returns:
             str: Optimized question for semantic search
         """
-        log_step_start(1, "OptimizeSemantic", last_utterance, debug)
+        log_step_start(1, "OptimizeSemantic", f"{last_utterance} (Model: {OPENAI_MODEL_DEFAULT})", debug)
         
         try:
             prompt_input = self.create_prompt_input(last_utterance)
@@ -130,7 +145,7 @@ class PromptManager:
         Returns:
             str: Analysis result ("including", "without", or "personal")
         """
-        log_step_start(3, "Analysis", last_utterance, debug)
+        log_step_start(3, "Analysis", f"{last_utterance} (Model: {OPENAI_MODEL_DEFAULT})", debug)
         
         try:
             prompt_input = self.create_prompt_input(last_utterance)
@@ -225,7 +240,7 @@ class PromptManager:
         Returns:
             str: Final answer
         """
-        log_step_start(6, "Generate Answer", f"Question: {last_utterance[:50]}...", debug)
+        log_step_start(6, "Generate Answer", f"Question: {last_utterance[:50]}... (Model: {OPENAI_MODEL_ANSWER})", debug)
         
         try:
             prompt_input = self.create_prompt_input(last_utterance, chunks=chunks)
@@ -236,7 +251,7 @@ class PromptManager:
                 {"role": "user", "content": prompt_text}
             ]
             
-            output = self._call_openai(messages)
+            output = self._call_openai(messages, model=OPENAI_MODEL_ANSWER)
             log_step_end(6, "Generate Answer", "Answer generated", debug)
             return output
             

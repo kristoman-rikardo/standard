@@ -276,6 +276,32 @@ class FlowManager:
             chunks = self.elasticsearch_client.format_chunks(elasticsearch_response, debug)
             result["chunks"] = chunks
             
+            # DEBUG: Check chunks immediately after format_chunks
+            if debug:
+                print(f"\n🔍 DEBUG - CHUNKS AFTER FORMAT_CHUNKS:")
+                print(f"   📏 Chunks length: {len(chunks):,} characters")
+                chunk_sections = chunks.split('\n\n')
+                if chunk_sections:
+                    first_chunk = chunk_sections[0]
+                    
+                    # Extract content correctly - handle multiline text
+                    lines = first_chunk.split('\n')
+                    content_started = False
+                    content_lines = []
+                    
+                    for line in lines:
+                        if line.startswith('Innhold: '):
+                            content_started = True
+                            content_lines.append(line[9:])  # Remove "Innhold: " prefix
+                        elif content_started and line == '---':
+                            break  # End of content
+                        elif content_started:
+                            content_lines.append(line)
+                    
+                    content = '\n'.join(content_lines)
+                    print(f"   📄 First content length: {len(content)} chars")
+                    print(f"   📄 First content: '{content[:100]}...'")
+            
             hits = elasticsearch_response.get('hits', {}).get('hits', [])
             debug_output.append(f"✓ Search completed: {len(hits)} hits returned")
             debug_output.append(f"✓ Formatted {len(chunks)} chunks for answer generation")
@@ -285,6 +311,32 @@ class FlowManager:
                 source = hit.get("_source", {})
                 score = hit.get("_score", 0)
                 debug_output.append(f"  - Chunk {i+1}: Score={score:.2f}, Ref={source.get('reference', 'N/A')[:50]}...")
+            
+            # DEBUG: Check chunks just before generate_answer
+            if debug:
+                print(f"\n🔍 DEBUG - CHUNKS BEFORE GENERATE_ANSWER:")
+                print(f"   📏 Chunks length: {len(chunks):,} characters")
+                chunk_sections = chunks.split('\n\n')
+                if chunk_sections:
+                    first_chunk = chunk_sections[0]
+                    
+                    # Extract content correctly - handle multiline text
+                    lines = first_chunk.split('\n')
+                    content_started = False
+                    content_lines = []
+                    
+                    for line in lines:
+                        if line.startswith('Innhold: '):
+                            content_started = True
+                            content_lines.append(line[9:])  # Remove "Innhold: " prefix
+                        elif content_started and line == '---':
+                            break  # End of content
+                        elif content_started:
+                            content_lines.append(line)
+                    
+                    content = '\n'.join(content_lines)
+                    print(f"   📄 First content length: {len(content)} chars")
+                    print(f"   📄 First content: '{content[:100]}...'")
             
             # 7. Generate final answer
             debug_output.append("\n=== ANSWER GENERATION PHASE ===")

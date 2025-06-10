@@ -3,293 +3,511 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StandardGPT - Intelligent Standard Search</title>
-    <meta name="description" content="Få svar på spørsmål om norske og internasjonale standarder med AI-drevet søk">
-    <meta name="theme-color" content="#3b82f6">
-    <meta name="msapplication-TileColor" content="#3b82f6">
-    
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-    
-    <!-- Preload critical resources -->
-    <link rel="preload" href="{{ url_for('static', filename='css/main.css') }}" as="style">
-    <link rel="preload" href="{{ url_for('static', filename='js/app.js') }}" as="script">
-    
-    <!-- CSS -->
-    {% if config.DEBUG %}
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-    {% else %}
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.min.css') }}">
-    {% endif %}
-    
-    <!-- PWA Meta Tags -->
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="StandardGPT">
-    <meta name="application-name" content="StandardGPT">
-    <meta name="msapplication-starturl" content="/">
-    <meta name="msapplication-navbutton-color" content="#3b82f6">
-    
-    <!-- Apple Touch Icons -->
-    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/icon-180x180.png') }}">
-    <link rel="apple-touch-icon" sizes="152x152" href="{{ url_for('static', filename='img/icon-152x152.png') }}">
-    <link rel="apple-touch-icon" sizes="144x144" href="{{ url_for('static', filename='img/icon-144x144.png') }}">
-    <link rel="apple-touch-icon" sizes="120x120" href="{{ url_for('static', filename='img/icon-120x120.png') }}">
-    <link rel="apple-touch-icon" sizes="114x114" href="{{ url_for('static', filename='img/icon-114x114.png') }}">
-    <link rel="apple-touch-icon" sizes="76x76" href="{{ url_for('static', filename='img/icon-76x76.png') }}">
-    <link rel="apple-touch-icon" sizes="72x72" href="{{ url_for('static', filename='img/icon-72x72.png') }}">
-    <link rel="apple-touch-icon" sizes="60x60" href="{{ url_for('static', filename='img/icon-60x60.png') }}">
-    <link rel="apple-touch-icon" sizes="57x57" href="{{ url_for('static', filename='img/icon-57x57.png') }}">
-    
-    <!-- Standard Icons -->
-    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/icon-32x32.png') }}">
-    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='img/icon-16x16.png') }}">
-    <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon.ico') }}">
-    
-    <!-- Microsoft Tiles -->
-    <meta name="msapplication-TileImage" content="{{ url_for('static', filename='img/icon-144x144.png') }}">
-    <meta name="msapplication-square70x70logo" content="{{ url_for('static', filename='img/icon-70x70.png') }}">
-    <meta name="msapplication-square150x150logo" content="{{ url_for('static', filename='img/icon-150x150.png') }}">
-    <meta name="msapplication-wide310x150logo" content="{{ url_for('static', filename='img/icon-310x150.png') }}">
-    <meta name="msapplication-square310x310logo" content="{{ url_for('static', filename='img/icon-310x310.png') }}">
-    
-    <!-- Open Graph / Social Media -->
-    <meta property="og:type" content="website">
-    <meta property="og:title" content="StandardGPT - Intelligent Standard Search">
-    <meta property="og:description" content="AI-drevet søk i norske og internasjonale standarder">
-    <meta property="og:image" content="{{ url_for('static', filename='img/og-image.png', _external=True) }}">
-    <meta property="og:url" content="{{ request.url }}">
-    <meta property="og:site_name" content="StandardGPT">
-    <meta property="og:locale" content="no_NO">
-    
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="StandardGPT - Intelligent Standard Search">
-    <meta name="twitter:description" content="AI-drevet søk i norske og internasjonale standarder">
-    <meta name="twitter:image" content="{{ url_for('static', filename='img/twitter-card.png', _external=True) }}">
-    
-    <!-- Security Headers -->
-    <meta http-equiv="X-Content-Type-Options" content="nosniff">
-    <meta http-equiv="X-Frame-Options" content="DENY">
-    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
-    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
-    
-    <!-- DNS Prefetch for performance -->
-    <link rel="dns-prefetch" href="//fonts.googleapis.com">
-    <link rel="dns-prefetch" href="//api.openai.com">
-    
-    <!-- Structured Data -->
-    <script type="application/ld+json">
-    {
-        "@context": "https://schema.org",
-        "@type": "WebApplication",
-        "name": "StandardGPT",
-        "description": "AI-drevet søk i norske og internasjonale standarder",
-        "url": "{{ request.url_root }}",
-        "applicationCategory": "BusinessApplication",
-        "operatingSystem": "Any",
-        "offers": {
-            "@type": "Offer",
-            "price": "0",
-            "priceCurrency": "NOK"
-        },
-        "author": {
-            "@type": "Organization",
-            "name": "StandardGPT"
+    <title>StandardGPT</title>
+    <!-- CSS Cache Buster: 2024-12-20-16:45 -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-    }
-    </script>
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: #000C40;
+            color: #ffffff;
+            min-height: 100vh;
+            padding: 30px 20px;
+            line-height: 1.5;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            min-height: calc(100vh - 60px);
+            gap: 30px;
+        }
+        
+        .header {
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 36px;
+            font-weight: normal;
+            color: #ffffff;
+            margin-bottom: 10px;
+        }
+        
+        .content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+        
+        .output-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .answer-box {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            min-height: 200px;
+        }
+        
+        .answer-box h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #ffffff;
+        }
+        
+        .answer-content {
+            font-size: 16px;
+            white-space: pre-wrap;
+            color: #ffffff;
+            line-height: 1.6;
+        }
+        
+        .debug-box {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .debug-box h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #ffffff;
+        }
+        
+        .debug-content {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            color: rgba(255, 255, 255, 0.8);
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .input-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .input-wrapper {
+            display: flex;
+            gap: 15px;
+            align-items: stretch;
+        }
+        
+        .question-input {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            color: #ffffff;
+            font-size: 16px;
+            resize: vertical;
+            min-height: 60px;
+            font-family: Arial, sans-serif;
+            transition: all 0.2s ease;
+        }
+        
+        .question-input:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(0, 0, 0, 0.4);
+        }
+        
+        .question-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .submit-btn {
+            background: #ffffff;
+            color: #000C40;
+            border: none;
+            border-radius: 8px;
+            padding: 15px 30px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 100px;
+            font-family: Arial, sans-serif;
+        }
+        
+        .submit-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.9);
+            transform: translateY(-1px);
+        }
+        
+        .submit-btn:disabled {
+            background: rgba(255, 255, 255, 0.3);
+            color: rgba(255, 255, 255, 0.6);
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 50px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .loading.active {
+            display: block;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.2);
+            border-top: 3px solid #ffffff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .status-info {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .debug-section {
+            margin-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 10px;
+        }
+        
+        .debug-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+        
+        .debug-section h4 {
+            color: #ffffff;
+            font-size: 13px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        
+        .debug-text {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 20px 15px;
+            }
+            
+            .container {
+                gap: 20px;
+            }
+            
+            .header h1 {
+                font-size: 28px;
+            }
+            
+            .input-wrapper {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .submit-btn {
+                width: 100%;
+            }
+            
+            .answer-box,
+            .input-section {
+                padding: 20px;
+            }
+            
+            .debug-content {
+                font-size: 11px;
+                max-height: 300px;
+            }
+        }
+    </style>
 </head>
 <body>
-    <!-- Skip to main content for accessibility -->
-    <a href="#main-content" class="skip-link">Hopp til hovedinnhold</a>
-    
-    <!-- Application Container -->
-    <div class="app-container">
-        <!-- Header Section -->
-        <header class="app-header">
-            <div class="header-content">
-                <h1 class="header-title">🔍 StandardGPT</h1>
-                <p class="header-description">
-                    Intelligent søk i norske og internasjonale standarder
-                </p>
-            </div>
-        </header>
-
-        <!-- Main Content -->
-        <main id="main-content" class="main-content">
-            <!-- Input Section -->
-            <section class="input-section" aria-label="Søkeskjema">
-                <div class="input-container">
-                    <label for="questionInput" class="input-label">
-                        Still ditt spørsmål om standarder
-                    </label>
-                    <div class="input-wrapper">
-                        <textarea 
-                            id="questionInput" 
-                            class="question-input"
-                            placeholder="F.eks. Hva sier NS-EN ISO 14155 om temperaturkrav?"
-                            rows="3"
-                            maxlength="1000"
-                            aria-describedby="input-help"
-                        ></textarea>
-                        <div class="input-actions">
-                            <button 
-                                id="submitBtn" 
-                                class="btn btn-primary submit-btn"
-                                type="button"
-                                aria-describedby="submit-help"
-                            >
-                                🚀 Spør StandardGPT
-                            </button>
-                            <button 
-                                id="clearBtn" 
-                                class="btn btn-secondary clear-btn"
-                                type="button"
-                                title="Tøm alle felt"
-                            >
-                                🗑️ Tøm
-                            </button>
-                        </div>
+    <div class="container">
+        <div class="header">
+            <h1>StandardGPT</h1>
+        </div>
+        
+        <div class="content">
+            <div class="output-section">
+                <div class="answer-box">
+                    <h3>Svar</h3>
+                    <div id="answerContent" class="answer-content">
+                        Skriv spørsmål nedenfor for å søke i standarder og personalhåndbøkene
                     </div>
-                    <div class="input-help" id="input-help">
-                        <span class="help-text">Minimum 3 tegn, maksimum 1000 tegn</span>
-                        <span class="help-shortcut">Trykk Ctrl+K for å fokusere</span>
+                    <div id="statusInfo" class="status-info hidden">
+                        <div>Prosesseringstid: <span id="processingTime">-</span>ms</div>
+                        <div>Status: <span id="securityStatus">-</span></div>
                     </div>
                 </div>
-            </section>
-
-            <!-- Examples Section -->
-            <section class="examples-section" aria-label="Eksempler på spørsmål">
-                <h2 class="examples-title">💡 Eksempler på spørsmål</h2>
-                <div id="examplesContainer" class="examples-grid">
-                    <!-- Examples will be loaded by JavaScript -->
-                </div>
-            </section>
-
-            <!-- Loading State -->
-            <section id="loadingContainer" class="loading-container" aria-live="polite" aria-label="Laster svar">
-                <div class="loading-content">
-                    <div class="spinner" aria-hidden="true"></div>
-                    <h3 class="loading-title">Søker i standarder...</h3>
-                    <p class="loading-description">
-                        Analyserer spørsmålet ditt og finner relevante standarder
-                    </p>
-                    <button 
-                        class="btn btn-secondary mt-4" 
-                        onclick="app.cancelRequest()"
-                        id="cancelBtn"
-                    >
-                        ⏹️ Avbryt
-                    </button>
-                </div>
-            </section>
-
-            <!-- Results Section -->
-            <section id="resultsContainer" class="results-container" aria-live="polite" aria-label="Søkeresultater">
-                <!-- Answer Card -->
-                <div class="result-card answer-card">
-                    <div class="result-header">
-                        <h3>📋 Svar</h3>
-                        <div class="result-actions">
-                            <button 
-                                id="debugToggle" 
-                                class="btn btn-sm btn-secondary"
-                                title="Vis/skjul teknisk informasjon"
-                            >
-                                🔍 Skjul Debug
-                            </button>
-                        </div>
-                    </div>
-                    <div class="result-content">
-                        <div id="answerContent" class="answer-content">
-                            <!-- Answer will be populated by JavaScript -->
-                        </div>
-                        
-                        <!-- Status Information -->
-                        <div class="status-info">
-                            <div class="status-row">
-                                <span class="status-label">Prosesseringstid:</span>
-                                <span id="processingTime" class="status-value">-</span>
-                            </div>
-                            <div class="status-row">
-                                <span class="status-label">Sikkerhet:</span>
-                                <span id="securityStatus" class="status-value">-</span>
-                            </div>
-                        </div>
+                
+                <div class="debug-box">
+                    <h3>Debug-informasjon</h3>
+                    <div id="debugContent" class="debug-content">
+                        Venter spørsmål...
                     </div>
                 </div>
-
-                <!-- Debug Card -->
-                <div class="result-card debug-card">
-                    <div class="result-header">
-                        <h4>🔧 Teknisk informasjon</h4>
-                    </div>
-                    <div class="result-content">
-                        <pre id="debugContent" class="debug-content">
-                            <!-- Debug info will be populated by JavaScript -->
-                        </pre>
-                    </div>
-                </div>
-
-                <!-- Action Buttons -->
-                <div class="result-actions-bottom">
-                    <button 
-                        class="btn btn-primary" 
-                        onclick="app.focusInput()"
-                    >
-                        ➕ Still nytt spørsmål
-                    </button>
-                    <button 
-                        class="btn btn-secondary" 
-                        onclick="window.print()"
-                    >
-                        🖨️ Skriv ut
-                    </button>
-                </div>
-            </section>
-        </main>
-
-        <!-- Footer -->
-        <footer class="app-footer">
-            <div class="footer-content">
-                <p class="footer-text">
-                    StandardGPT bruker AI for å søke i norske og internasjonale standarder.
-                    Kontroller alltid opplysningene mot original standardtekst.
-                </p>
-                <div class="footer-links">
-                    <a href="#" class="footer-link">Om StandardGPT</a>
-                    <a href="#" class="footer-link">Personvern</a>
-                    <a href="#" class="footer-link">Tilgjengelighet</a>
+                
+                <div id="loadingContainer" class="loading">
+                    <div class="spinner"></div>
+                    <div>Søker gjennom 70 000+ standarder og personalhåndbøkene...</div>
                 </div>
             </div>
-        </footer>
+            
+            <div class="input-section">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="questionInput" 
+                        class="question-input"
+                        placeholder="Skriv spørsmål om standarder..."
+                        maxlength="1000"
+                    ></textarea>
+                    <button id="submitBtn" class="submit-btn">Send</button>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Error Boundary for JavaScript -->
-    <noscript>
-        <div class="no-js-message">
-            <h2>JavaScript kreves</h2>
-            <p>StandardGPT krever JavaScript for å fungere. Vennligst aktiver JavaScript i nettleseren din.</p>
-        </div>
-    </noscript>
-
-    <!-- JavaScript -->
-    {% if config.DEBUG %}
-    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
-    {% else %}
-    <script src="{{ url_for('static', filename='js/app.min.js') }}" defer></script>
-    {% endif %}
-    
-    <!-- Performance and Analytics (if needed) -->
     <script>
-        // Performance monitoring
-        window.addEventListener('load', () => {
-            if ('performance' in window) {
-                const loadTime = performance.timing.loadEventEnd - performance.timing.navigationStart;
-                console.log('Page load time:', loadTime + 'ms');
+        class StandardGPT {
+            constructor() {
+                this.init();
             }
+            
+            init() {
+                this.questionInput = document.getElementById('questionInput');
+                this.submitBtn = document.getElementById('submitBtn');
+                this.answerContent = document.getElementById('answerContent');
+                this.debugContent = document.getElementById('debugContent');
+                this.loadingContainer = document.getElementById('loadingContainer');
+                this.statusInfo = document.getElementById('statusInfo');
+                this.processingTime = document.getElementById('processingTime');
+                this.securityStatus = document.getElementById('securityStatus');
+                
+                this.bindEvents();
+                this.questionInput.focus();
+            }
+            
+            bindEvents() {
+                this.submitBtn.addEventListener('click', () => this.submitQuestion());
+                this.questionInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
+                        this.submitQuestion();
+                    }
+                });
+                
+                // Auto-resize textarea
+                this.questionInput.addEventListener('input', () => {
+                    this.questionInput.style.height = 'auto';
+                    this.questionInput.style.height = this.questionInput.scrollHeight + 'px';
+                });
+            }
+            
+            async submitQuestion() {
+                const question = this.questionInput.value.trim();
+                if (!question || question.length < 3) {
+                    this.showError('Spørsmål må være minst 3 tegn');
+                    return;
+                }
+                
+                this.setLoading(true);
+                this.clearResults();
+                
+                const startTime = Date.now();
+                
+                try {
+                    const response = await fetch('/api/query', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ question })
+                    });
+                    
+                    const endTime = Date.now();
+                    const processingTime = endTime - startTime;
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    this.displayResults(data, processingTime);
+                    
+                } catch (error) {
+                    this.showError('Feil ved spørring: ' + error.message);
+                } finally {
+                    this.setLoading(false);
+                }
+            }
+            
+            setLoading(loading) {
+                this.submitBtn.disabled = loading;
+                this.submitBtn.textContent = loading ? 'Søker...' : 'Send';
+                this.loadingContainer.classList.toggle('active', loading);
+            }
+            
+            clearResults() {
+                this.answerContent.textContent = '';
+                this.debugContent.textContent = '';
+                this.statusInfo.classList.add('hidden');
+            }
+            
+            displayResults(data, processingTime) {
+                // Display answer
+                this.answerContent.textContent = data.answer || 'Ingen svar mottatt';
+                
+                // Display status
+                this.processingTime.textContent = processingTime;
+                this.securityStatus.textContent = data.security_sanitized ? 'Validert' : 'Ikke validert';
+                this.statusInfo.classList.remove('hidden');
+                
+                // Display debug information
+                this.displayDebugInfo(data);
+            }
+            
+            displayDebugInfo(data) {
+                let debugInfo = '';
+                
+                // Basic info
+                debugInfo += '=== SYSTEM INFO ===\\n';
+                debugInfo += `Prosesseringstid: ${data.processing_time || 'N/A'}ms\\n`;
+                debugInfo += `Route: ${data.route_taken || 'N/A'}\\n`;
+                debugInfo += `Sikkerhet: ${data.security_sanitized ? 'Validert' : 'Ikke validert'}\\n`;
+                debugInfo += `Feil: ${data.error || 'Ingen'}\\n\\n`;
+                
+                // Optimized query
+                if (data.optimized) {
+                    debugInfo += '=== SEMANTISK OPTIMISERING ===\\n';
+                    debugInfo += `Input: ${data.optimized}\\n\\n`;
+                }
+                
+                // Analysis
+                if (data.analysis) {
+                    debugInfo += '=== ANALYSE ===\\n';
+                    debugInfo += `Resultat: ${data.analysis}\\n\\n`;
+                }
+                
+                // Standard numbers
+                if (data.standard_numbers && data.standard_numbers.length > 0) {
+                    debugInfo += '=== STANDARD NUMRE ===\\n';
+                    debugInfo += `Funnet: ${data.standard_numbers.join(', ')}\\n\\n`;
+                }
+                
+                // Embeddings
+                if (data.embeddings) {
+                    debugInfo += '=== EMBEDDINGS ===\\n';
+                    debugInfo += `Dimensjoner: ${data.embeddings.length}\\n`;
+                    debugInfo += `Sample: [${data.embeddings.slice(0, 5).map(x => x.toFixed(3)).join(', ')}...]\\n\\n`;
+                }
+                
+                // Query object
+                if (data.query_object) {
+                    debugInfo += '=== ELASTICSEARCH QUERY ===\\n';
+                    debugInfo += JSON.stringify(data.query_object, null, 2) + '\\n\\n';
+                }
+                
+                // Elasticsearch response
+                if (data.elasticsearch_response) {
+                    const hits = data.elasticsearch_response.hits?.hits || [];
+                    debugInfo += '=== ELASTICSEARCH RESPONS ===\\n';
+                    debugInfo += `Totale hits: ${data.elasticsearch_response.hits?.total?.value || 0}\\n`;
+                    debugInfo += `Returnerte hits: ${hits.length}\\n`;
+                    
+                    if (hits.length > 0) {
+                        debugInfo += '\\nFørste 3 hits:\\n';
+                        hits.slice(0, 3).forEach((hit, i) => {
+                            const source = hit._source || {};
+                            debugInfo += `\\nHit ${i + 1}:\\n`;
+                            debugInfo += `  Score: ${hit._score || 'N/A'}\\n`;
+                            debugInfo += `  Referanse: ${source.reference || 'N/A'}\\n`;
+                            debugInfo += `  Side: ${source.page || 'N/A'}\\n`;
+                            debugInfo += `  Tekst lengde: ${(source.text || '').length} tegn\\n`;
+                            debugInfo += `  Tekst preview: ${(source.text || '').substring(0, 100)}...\\n`;
+                        });
+                    }
+                    debugInfo += '\\n';
+                }
+                
+                // Chunks
+                if (data.chunks) {
+                    debugInfo += '=== CHUNKS ===\\n';
+                    debugInfo += `Total lengde: ${data.chunks.length} tegn\\n`;
+                    
+                    const chunkSections = data.chunks.split('\\n\\n');
+                    debugInfo += `Antall chunks: ${chunkSections.length}\\n`;
+                    
+                    if (chunkSections.length > 0) {
+                        debugInfo += '\\nFørste chunk:\\n';
+                        debugInfo += chunkSections[0].substring(0, 500) + '...\\n';
+                    }
+                    debugInfo += '\\n';
+                }
+                
+                // Raw debug if available
+                if (data.debug) {
+                    debugInfo += '=== RAW DEBUG ===\\n';
+                    debugInfo += data.debug + '\\n\\n';
+                }
+                
+                // Full response object
+                debugInfo += '=== FULL RESPONSE ===\\n';
+                debugInfo += JSON.stringify(data, null, 2);
+                
+                this.debugContent.textContent = debugInfo;
+            }
+            
+            showError(message) {
+                this.answerContent.textContent = 'Feil: ' + message;
+                this.debugContent.textContent = 'Error: ' + message + '\\nTimestamp: ' + new Date().toISOString();
+            }
+        }
+        
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', () => {
+            new StandardGPT();
         });
     </script>
 </body>

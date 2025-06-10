@@ -27,4 +27,4 @@ Gi kun det genererte spørsmålet, uten anførselstegn eller annen tilleggsinfor
 ## Inndata
 
 Brukerens siste spørsmål:
-Hvordan skal nettovolum beregnes?
+{last_utterance}  

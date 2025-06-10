@@ -91,8 +91,8 @@ class ElasticsearchClient:
     
     def format_chunks(self, elasticsearch_response: Dict, debug: bool = True) -> str:
         """
-        Format Elasticsearch response into chunks for the answer prompt
-        Using the correct field names: text, reference, page
+        Format Elasticsearch response into chunks for answer generation
+        Using correct field names: text, reference, page
         
         Args:
             elasticsearch_response (dict): Raw Elasticsearch response
@@ -111,6 +111,8 @@ class ElasticsearchClient:
                 return "Ingen relevante dokumenter funnet."
             
             chunks = []
+            total_text_length = 0
+            
             for i, hit in enumerate(hits):
                 source = hit.get("_source", {})
                 score = hit.get("_score", 0)
@@ -119,6 +121,15 @@ class ElasticsearchClient:
                 text = source.get("text", "")
                 reference = source.get("reference", "")
                 page = source.get("page", "")
+                
+                # DEBUG: Track text length before formatting
+                original_text_length = len(text)
+                total_text_length += original_text_length
+                
+                if debug and i < 3:  # Debug first 3 hits
+                    print(f"\n🔍 DEBUG CHUNK {i+1}:")
+                    print(f"   Original text length: {original_text_length}")
+                    print(f"   Text preview: '{text[:100]}...'")
                 
                 # Format chunk
                 chunk_lines = []
@@ -129,12 +140,28 @@ class ElasticsearchClient:
                 if page:
                     chunk_lines.append(f"Side: {page}")
                 
+                # Use multiline text format to preserve all content including newlines
                 chunk_lines.append(f"Innhold: {text}")
                 chunk_lines.append("---")
                 
-                chunks.append("\n".join(chunk_lines))
+                formatted_chunk = "\n".join(chunk_lines)
+                chunks.append(formatted_chunk)
+                
+                # DEBUG: Check formatted chunk length
+                if debug and i < 3:
+                    content_line = f"Innhold: {text}"
+                    print(f"   Content line length: {len(content_line)}")
+                    print(f"   Content line: '{content_line[:100]}...'")
+                    print(f"   Formatted chunk length: {len(formatted_chunk)}")
             
             formatted_chunks = "\n\n".join(chunks)
+            
+            if debug:
+                print(f"\n🔍 FORMAT_CHUNKS SUMMARY:")
+                print(f"   Total hits processed: {len(hits)}")
+                print(f"   Total original text: {total_text_length:,} chars")
+                print(f"   Final formatted chunks: {len(formatted_chunks):,} chars")
+                print(f"   First 200 chars of result: '{formatted_chunks[:200]}...'")
             
             log_step_end("5.1", "Format Chunks", f"Formatted {len(chunks)} chunks", debug)
             return formatted_chunks
