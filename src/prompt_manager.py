@@ -37,13 +37,8 @@ class PromptManager:
         if model is None:
             model = OPENAI_MODEL_DEFAULT
             
-        # Set appropriate max_tokens based on model
-        if "gpt-4.1" in model:
-            max_tokens = 4096
-        elif "gpt-4-turbo" in model:
-            max_tokens = 4096
-        else:
-            max_tokens = 8000
+        # Set max_tokens to 8000 for all prompts consistently
+        max_tokens = 8000
             
         try:
             if hasattr(self, '_debug_enabled') and self._debug_enabled:
@@ -76,7 +71,8 @@ class PromptManager:
             "analysis", 
             "extractStandard",
             "optimizeTextual",
-            "answer"
+            "answer",
+            "extractFromMemory"
         ]
         
         prompts = {}
@@ -104,12 +100,13 @@ class PromptManager:
         base_input.update(kwargs)
         return base_input
     
-    def execute_optimize_semantic(self, last_utterance, debug=True):
+    def execute_optimize_semantic(self, last_utterance, conversation_memory="", debug=True):
         """
         Execute the optimizeSemantic prompt
         
         Args:
             last_utterance (str): User's original question
+            conversation_memory (str): Formatted conversation memory
             debug (bool): Enable debug logging
             
         Returns:
@@ -118,7 +115,7 @@ class PromptManager:
         log_step_start(1, "OptimizeSemantic", f"{last_utterance} (Model: {OPENAI_MODEL_DEFAULT})", debug)
         
         try:
-            prompt_input = self.create_prompt_input(last_utterance)
+            prompt_input = self.create_prompt_input(last_utterance, conversation_memory=conversation_memory)
             prompt_text = self.prompts["optimizeSemantic"].invoke(prompt_input).text
             
             messages = [
@@ -126,7 +123,7 @@ class PromptManager:
                 {"role": "user", "content": prompt_text}
             ]
             
-            output = self._call_openai(messages)
+            output = self._call_openai(messages, model=OPENAI_MODEL_DEFAULT)
             log_step_end(1, "OptimizeSemantic", output, debug)
             return output
             
@@ -134,39 +131,56 @@ class PromptManager:
             log_error("OptimizeSemantic", str(e), debug)
             raise
     
-    def execute_analysis(self, last_utterance, debug=True):
+    def execute_analysis(self, last_utterance, conversation_memory="", debug=True):
         """
         Execute the analysis prompt to determine routing
         
         Args:
             last_utterance (str): User's original question
+            conversation_memory (str): Formatted conversation memory
             debug (bool): Enable debug logging
             
         Returns:
-            str: Analysis result ("including", "without", or "personal")
+            str: Analysis result ("including", "without", "personal", or "memory")
         """
         log_step_start(3, "Analysis", f"{last_utterance} (Model: {OPENAI_MODEL_DEFAULT})", debug)
         
         try:
-            prompt_input = self.create_prompt_input(last_utterance)
+            prompt_input = self.create_prompt_input(last_utterance, conversation_memory=conversation_memory)
             prompt_text = self.prompts["analysis"].invoke(prompt_input).text
             
+            if debug:
+                print(f"\n🔍 DEBUG - ANALYSIS PROMPT:")
+                print(f"Conversation memory: {conversation_memory[:200]}...")
+                print(f"Prompt length: {len(prompt_text)} chars")
+                print(f"Prompt preview: {prompt_text[:500]}...")
+            
             messages = [
-                {"role": "system", "content": "You are a routing system that analyzes questions and returns exactly one of: 'including', 'without', or 'personal'."},
+                {"role": "system", "content": "You are a routing system that analyzes questions and returns exactly one of: 'including', 'without', 'personal', or 'memory'."},
                 {"role": "user", "content": prompt_text}
             ]
             
-            output = self._call_openai(messages).lower()
+            output = self._call_openai(messages, model=OPENAI_MODEL_DEFAULT).lower().strip()
             
-            # Remove quotes if present
-            output = output.strip('"\'')
+            # More aggressive cleaning of output
+            output = output.strip('"\'`()[]{}.,!?;: \n\r\t')
+            
+            # Validate output
+            valid_routes = ["including", "without", "personal", "memory"]
+            if output not in valid_routes:
+                if debug:
+                    print(f"❌ Invalid analysis output: '{output}', defaulting to 'without'")
+                    print(f"Valid routes are: {valid_routes}")
+                output = "without"  # Safe fallback
             
             log_step_end(3, "Analysis", output, debug)
             return output
             
         except Exception as e:
             log_error("Analysis", str(e), debug)
-            raise
+            if debug:
+                print(f"❌ Analysis failed, defaulting to 'without': {str(e)}")
+            return "without"  # Safe fallback
     
     def execute_extract_standard(self, last_utterance, debug=True):
         """
@@ -179,7 +193,7 @@ class PromptManager:
         Returns:
             str: Extracted standard numbers (comma separated)
         """
-        log_step_start("4a", "ExtractStandard", last_utterance, debug)
+        log_step_start("4a", "ExtractStandard", f"{last_utterance} (Model: {OPENAI_MODEL_DEFAULT})", debug)
         
         try:
             prompt_input = self.create_prompt_input(last_utterance)
@@ -190,7 +204,7 @@ class PromptManager:
                 {"role": "user", "content": prompt_text}
             ]
             
-            output = self._call_openai(messages)
+            output = self._call_openai(messages, model=OPENAI_MODEL_DEFAULT)
             log_step_end("4a", "ExtractStandard", output, debug)
             return output
             
@@ -198,21 +212,53 @@ class PromptManager:
             log_error("ExtractStandard", str(e), debug)
             raise
     
-    def execute_optimize_textual(self, last_utterance, debug=True):
+    def execute_extract_from_memory(self, last_utterance, conversation_memory, debug=True):
+        """
+        Execute the extractFromMemory prompt with GPT-4o
+        
+        Args:
+            last_utterance (str): User's original question
+            conversation_memory (str): Formatted conversation memory
+            debug (bool): Enable debug logging
+            
+        Returns:
+            str: Extracted terms from memory context (comma separated)
+        """
+        log_step_start("4c", "ExtractFromMemory", f"{last_utterance[:50]}... (Model: {OPENAI_MODEL_DEFAULT})", debug)
+        
+        try:
+            prompt_input = self.create_prompt_input(last_utterance, conversation_memory=conversation_memory)
+            prompt_text = self.prompts["extractFromMemory"].invoke(prompt_input).text
+            
+            messages = [
+                {"role": "system", "content": "You extract standard numbers from memory context. Return only the standard numbers, comma separated."},
+                {"role": "user", "content": prompt_text}
+            ]
+            
+            output = self._call_openai(messages, model=OPENAI_MODEL_DEFAULT)
+            log_step_end("4c", "ExtractFromMemory", output, debug)
+            return output
+            
+        except Exception as e:
+            log_error("ExtractFromMemory", str(e), debug)
+            raise
+    
+    def execute_optimize_textual(self, last_utterance, conversation_memory="", debug=True):
         """
         Execute the optimizeTextual prompt
         
         Args:
             last_utterance (str): User's original question
+            conversation_memory (str): Formatted conversation memory
             debug (bool): Enable debug logging
             
         Returns:
             str: Optimized text for textual search
         """
-        log_step_start("4b", "OptimizeTextual", last_utterance, debug)
+        log_step_start("4b", "OptimizeTextual", f"{last_utterance[:50]}... (Model: {OPENAI_MODEL_DEFAULT})", debug)
         
         try:
-            prompt_input = self.create_prompt_input(last_utterance)
+            prompt_input = self.create_prompt_input(last_utterance, conversation_memory=conversation_memory)
             prompt_text = self.prompts["optimizeTextual"].invoke(prompt_input).text
             
             messages = [
@@ -220,7 +266,7 @@ class PromptManager:
                 {"role": "user", "content": prompt_text}
             ]
             
-            output = self._call_openai(messages)
+            output = self._call_openai(messages, model=OPENAI_MODEL_DEFAULT)
             log_step_end("4b", "OptimizeTextual", output, debug)
             return output
             
@@ -228,13 +274,14 @@ class PromptManager:
             log_error("OptimizeTextual", str(e), debug)
             raise
     
-    def execute_answer(self, last_utterance, chunks, debug=True):
+    def execute_answer(self, last_utterance, chunks, conversation_memory="", debug=True):
         """
         Execute the answer prompt to generate final response
         
         Args:
             last_utterance (str): User's original question
             chunks (str): Retrieved document chunks
+            conversation_memory (str): Formatted conversation memory
             debug (bool): Enable debug logging
             
         Returns:
@@ -243,7 +290,7 @@ class PromptManager:
         log_step_start(6, "Generate Answer", f"Question: {last_utterance[:50]}... (Model: {OPENAI_MODEL_ANSWER})", debug)
         
         try:
-            prompt_input = self.create_prompt_input(last_utterance, chunks=chunks)
+            prompt_input = self.create_prompt_input(last_utterance, chunks=chunks, conversation_memory=conversation_memory)
             prompt_text = self.prompts["answer"].invoke(prompt_input).text
             
             messages = [
@@ -259,29 +306,31 @@ class PromptManager:
             log_error("Generate Answer", str(e), debug)
             raise
     
-    async def optimize_semantic(self, question: str) -> str:
+    async def optimize_semantic(self, question: str, conversation_memory: str = "") -> str:
         """
         Async wrapper for semantic optimization
         
         Args:
             question: User's question to optimize
+            conversation_memory: Formatted conversation memory
             
         Returns:
             str: Optimized question for semantic search
         """
-        return self.execute_optimize_semantic(question, debug=False)
+        return self.execute_optimize_semantic(question, conversation_memory, debug=False)
     
-    async def analyze_question(self, question: str) -> str:
+    async def analyze_question(self, question: str, conversation_memory: str = "") -> str:
         """
         Async wrapper for question analysis
         
         Args:
             question: User's question to analyze
+            conversation_memory: Formatted conversation memory
             
         Returns:
             str: Analysis result for routing
         """
-        return self.execute_analysis(question, debug=False)
+        return self.execute_analysis(question, conversation_memory, debug=False)
     
     async def extract_standard_numbers(self, question: str) -> List[str]:
         """
@@ -300,27 +349,47 @@ class PromptManager:
             return standards
         return []
     
-    async def optimize_textual(self, question: str) -> str:
+    async def extract_from_memory(self, question: str, conversation_memory: str) -> List[str]:
+        """
+        Async wrapper for memory-based term extraction
+        
+        Args:
+            question: User's question to extract terms from
+            conversation_memory: Formatted conversation memory
+            
+        Returns:
+            List[str]: List of extracted terms from memory context
+        """
+        result = self.execute_extract_from_memory(question, conversation_memory, debug=False)
+        if isinstance(result, str) and result.strip():
+            # Split by comma and clean up each term
+            terms = [s.strip() for s in result.split(',') if s.strip()]
+            return terms
+        return []
+    
+    async def optimize_textual(self, question: str, conversation_memory: str = "") -> str:
         """
         Async wrapper for textual optimization
         
         Args:
             question: User's question to optimize for textual search
+            conversation_memory: Formatted conversation memory
             
         Returns:
             str: Optimized text for textual search
         """
-        return self.execute_optimize_textual(question, debug=False)
+        return self.execute_optimize_textual(question, conversation_memory, debug=False)
     
-    async def generate_answer(self, question: str, chunks: str) -> str:
+    async def generate_answer(self, question: str, chunks: str, conversation_memory: str = "") -> str:
         """
         Async wrapper for answer generation
         
         Args:
             question: Original user question
             chunks: Formatted chunks from Elasticsearch
+            conversation_memory: Formatted conversation memory
             
         Returns:
             str: Generated answer
         """
-        return self.execute_answer(question, chunks, debug=False) 
+        return self.execute_answer(question, chunks, conversation_memory, debug=False) 

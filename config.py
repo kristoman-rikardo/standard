@@ -208,9 +208,10 @@ class HealthCheck:
             from openai import OpenAI
             client = OpenAI(api_key=app.config['OPENAI_API_KEY'])
             
-            # Simple test request
+            # Simple test request - use configured model
+            model = app.config.get('OPENAI_MODEL', 'gpt-4o')
             response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=model,
                 messages=[{"role": "user", "content": "test"}],
                 max_tokens=5
             )

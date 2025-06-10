@@ -1,0 +1,55 @@
+Basert på brukerens spørsmål og samtaleminnet, skal du finne alle henvisninger til standarder, som skal brukes som filter i søket etter standarder.
+
+En standard kan ha ulike formater som:
+
+* **NS 3457-7**
+* **M-004**
+* **ISO 9001**
+* **EN 1991-1-4**
+* **NS 3457-9:2021**
+* osv.
+
+**Instruksjoner:**
+
+Brukerens spørsmål er stilt i kontekst av et tidligere svar, som du kan se i samtaleminnet. Du skal hente ut standarnavnene på de relevante standardene brukeren stiller spørsmålet sitt om, basert på samtaleminnet. 
+Det vil si at brukeren ikke nødvendigvis nevner et navn eksplisitt, det kan være en oppfølging fra et tidligere spørsmål. Du må derfor se hele samtaleminnet, og avgjøre hvilke standarder brukeren faktisk spør om. 
+
+* Trekk ut **alle standardnumre slik de fremkommer fra brukerens forespørsel og samtaleminnet**, inkludert eventuelle prefikser (f.eks. "NS") og suffikser (f.eks. ":2020").
+-> Dersom årstallet står etter standardnummeret uten kolon (f.eks. "NS 3457-9 2021"), skal det tolkes og returneres som "NS 3457-9:2021
+* Hvis det er flere standarder, returner dem **kommadelt i én streng**, i samme rekkefølge som de nevnes i teksten.
+* Hvis ingen standarder nevnes, returner en tom streng (`""`).
+* Hvis deler av standardnavnet kan være nevnt returnerer du dette, og hvis du er usikker på formateringen tar du kun med den delen du er sikker på, litt er bedre enn ingenting.
+* Det er ekstremt viktig at du forholder deg primært til den forrige systemmeldingen og brukermeldingen som ble sendt, alstå meldingsparet nederst i samtaleminnet. 
+
+* Du skal aldri, under noen omstendighet, levere noe annen tekst enn de standardene du skal hente ut separert med komma. 
+
+**Eksempler:**
+
+Samtaleminne: 
+"Bruker: `Hva er krav i M-004?´
+System: `Krav i M-004:2018 omfatter blant annet isolasjonskrav ovs...´
+Bruker: `Kan du utdype mer om isolasjonskrav?´"
+
+Brukerens spørsmål:
+`Kan du utdype mer om isolasjonskrav?`
+
+Output:
+`M-004:2018`
+
+---
+
+Samtaleminne:
+"Bruker: `Kan du oppsummere hva NS 3457-7, NS 3457-8, NS 3457-9 og NS 3451 handler om?`
+System: `Standardene handler om... osv. osv.´
+Bruker: `Når er de sist oppdatert?´
+
+Output:
+`NS 3457-7, NS 3457-8, NS 3457-9, NS 3451`
+
+**Input**
+
+Samtaleminne: '{conversation_memory}'
+
+Brukerens spørsmål: '{last_utterance}'
+
+Output: 

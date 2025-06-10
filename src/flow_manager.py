@@ -20,6 +20,7 @@ import json
 import time
 import logging
 from dataclasses import dataclass
+import asyncio
 
 @dataclass
 class ValidationResult:
@@ -119,12 +120,13 @@ class FlowManager:
         )
         self.logger = logging.getLogger(__name__)
     
-    async def process_query(self, question: str, debug: bool = True) -> Dict[str, Any]:
+    async def process_query(self, question: str, conversation_memory: str = "0", debug: bool = True) -> Dict[str, Any]:
         """
-        Process query through the complete flow with multi-standard support
+        Process query through the complete flow with multi-standard support and memory
         
         Args:
             question: User's question
+            conversation_memory: Formatted conversation memory string
             debug: Enable debug output
             
         Returns:
@@ -137,12 +139,14 @@ class FlowManager:
         try:
             debug_output.append("=== StandardGPT Query Processing ===")
             debug_output.append(f"Question: {question}")
+            debug_output.append(f"Memory: {conversation_memory[:100]}{'...' if len(conversation_memory) > 100 else ''}")
             
             # Step 0: Input Validation
             if debug:
                 print(f"\n🔒 DEBUG - STEG 0: Input Validation - START:")
                 print("=" * 50)
                 print(f"Input: {question[:100]}{'...' if len(question) > 100 else ''}")
+                print(f"Memory: {conversation_memory[:100]}{'...' if len(conversation_memory) > 100 else ''}")
                 print("=" * 50)
             
             validation_result = self.validator.validate_question(question)
@@ -174,80 +178,138 @@ class FlowManager:
                 print(f"Original length: {len(question)}, Sanitized length: {len(sanitized_question)}")
                 print("=" * 50)
             
-            # 1. Semantic optimization
-            debug_output.append("\n=== OPTIMIZATION PHASE ===")
-            optimized = await self.prompt_manager.optimize_semantic(sanitized_question)
-            debug_output.append(f"✓ Semantic optimization: {optimized}")
-            result["optimized"] = optimized
+            # 1. Parallel optimization and analysis (SAFE TO RUN TOGETHER)
+            debug_output.append("\n=== PARALLEL OPTIMIZATION & ANALYSIS PHASE ===")
             
-            # 2. Get embeddings
+            # Run optimize_semantic and analyze_question in parallel - these are independent
+            optimization_task = self.prompt_manager.optimize_semantic(sanitized_question, conversation_memory)
+            analysis_task = self.prompt_manager.analyze_question(sanitized_question, conversation_memory)
+            
+            optimized, analysis = await asyncio.gather(optimization_task, analysis_task)
+            
+            debug_output.append(f"✓ Semantic optimization: {optimized}")
+            debug_output.append(f"✓ Question analysis: {analysis}")
+            result["optimized"] = optimized
+            result["analysis"] = analysis
+            
+            # 2. Get embeddings (can be done while we decide on extraction)
             debug_output.append("\n=== EMBEDDINGS PHASE ===")
             embeddings = self.elasticsearch_client.get_embeddings_from_api(optimized, debug)
             debug_output.append(f"✓ Embeddings retrieved: {len(embeddings) if embeddings else 0} dimensions")
             result["embeddings"] = embeddings
             
-            # 3. Extract standard numbers and analyze question
-            debug_output.append("\n=== ANALYSIS PHASE ===")
+            # 3. Extract terms AFTER analysis determines the route (CRITICAL CONSTRAINT)
+            debug_output.append("\n=== EXTRACTION PHASE (POST-ANALYSIS) ===")
             
-            # Extract standard numbers - handle both single and multiple standards
-            standard_numbers = await self.prompt_manager.extract_standard_numbers(sanitized_question)
-            if isinstance(standard_numbers, str) and standard_numbers.strip():
-                # Convert single standard to list for consistent handling
-                standard_numbers = [s.strip() for s in standard_numbers.split(',') if s.strip()]
-            elif not isinstance(standard_numbers, list):
+            # Based on analysis, extract appropriate terms
+            if analysis.lower() == "memory":
+                # Extract terms from memory context
+                memory_terms = await self.prompt_manager.extract_from_memory(sanitized_question, conversation_memory)
                 standard_numbers = []
+                result["memory_terms"] = memory_terms
+                debug_output.append(f"✓ Extracted {len(memory_terms)} term(s) from memory: {memory_terms}")
+            else:
+                # Extract standard numbers normally
+                standard_numbers = await self.prompt_manager.extract_standard_numbers(sanitized_question)
+                if isinstance(standard_numbers, str) and standard_numbers.strip():
+                    # Convert single standard to list for consistent handling
+                    standard_numbers = [s.strip() for s in standard_numbers.split(',') if s.strip()]
+                elif not isinstance(standard_numbers, list):
+                    standard_numbers = []
+                
+                memory_terms = []
+                result["memory_terms"] = []
+                debug_output.append(f"✓ Extracted {len(standard_numbers)} standard number(s): {standard_numbers}")
             
-            validation_result = self.validator.validate_standard_numbers(standard_numbers)
-            if not validation_result.is_valid:
-                error_msg = f"Standard validation failed: {validation_result.error_message}"
-                self.logger.warning(f"Invalid standard rejected: {error_msg}")
-                return {
-                    "answer": "Beklager, det oppstod en feil under behandling av standardene. Vennligst prøv igjen senere.",
-                    "error": error_msg,
-                    "processing_time": time.time() - start_time,
-                    "debug": "\n".join(debug_output) if debug else "",
-                    "security_sanitized": True
-                }
-            
-            sanitized_standard_numbers = validation_result.sanitized_input
-            
-            debug_output.append(f"✓ Extracted {len(sanitized_standard_numbers)} standard number(s): {sanitized_standard_numbers}")
-            
-            # Analyze question type
-            analysis = await self.prompt_manager.analyze_question(sanitized_question)
-            debug_output.append(f"✓ Question analysis: {analysis}")
+            # Validate extracted terms
+            if analysis.lower() == "memory":
+                # Validate memory terms (reuse standard validation)
+                validation_result = self.validator.validate_standard_numbers(memory_terms)
+                if not validation_result.is_valid:
+                    error_msg = f"Memory terms validation failed: {validation_result.error_message}"
+                    self.logger.warning(f"Invalid memory terms rejected: {error_msg}")
+                    return {
+                        "answer": "Beklager, det oppstod en feil under behandling av samtaleminnet. Vennligst prøv igjen senere.",
+                        "error": error_msg,
+                        "processing_time": time.time() - start_time,
+                        "debug": "\n".join(debug_output) if debug else "",
+                        "security_sanitized": True
+                    }
+                sanitized_filter_terms = validation_result.sanitized_input
+                result["memory_terms"] = sanitized_filter_terms
+            else:
+                # Validate standard numbers
+                validation_result = self.validator.validate_standard_numbers(standard_numbers)
+                if not validation_result.is_valid:
+                    error_msg = f"Standard validation failed: {validation_result.error_message}"
+                    self.logger.warning(f"Invalid standard rejected: {error_msg}")
+                    return {
+                        "answer": "Beklager, det oppstod en feil under behandling av standardene. Vennligst prøv igjen senere.",
+                        "error": error_msg,
+                        "processing_time": time.time() - start_time,
+                        "debug": "\n".join(debug_output) if debug else "",
+                        "security_sanitized": True
+                    }
+                sanitized_standard_numbers = validation_result.sanitized_input
+                result["standard_numbers"] = sanitized_standard_numbers
             
             # 4. Routing decision based on analysis
-            if sanitized_standard_numbers and len(sanitized_standard_numbers) > 0:
+            if debug:
+                print(f"\n🛤️ DEBUG - ROUTING DECISION:")
+                print(f"Analysis result: '{analysis}'")
+                print(f"Available routes: memory, including, personal, without")
+            
+            if analysis.lower() == "memory":
+                route = "memory"
+                debug_output.append(f"✓ Route: MEMORY - Using terms from conversation: {result['memory_terms']}")
+            elif analysis.lower() == "including" and standard_numbers and len(standard_numbers) > 0:
                 route = "including"
-                debug_output.append(f"✓ Route: FILTER - Focusing on standard(s): {', '.join(sanitized_standard_numbers)}")
+                debug_output.append(f"✓ Route: FILTER - Focusing on standard(s): {', '.join(result['standard_numbers'])}")
             elif "personal" in analysis.lower() or "personalhåndbok" in analysis.lower():
                 route = "personal"
                 debug_output.append("✓ Route: PERSONAL - Searching personal handbook")
-            else:
+            elif analysis.lower() == "without":
                 route = "without"
                 debug_output.append("✓ Route: TEXTUAL - General text search")
+            else:
+                # Handle unexpected analysis results with fallback
+                route = "without"
+                debug_output.append(f"⚠️ Route: FALLBACK TO TEXTUAL - Unexpected analysis: '{analysis}'")
+                if debug:
+                    print(f"⚠️ Unexpected analysis result: '{analysis}', falling back to 'without'")
             
             result["route_taken"] = route
-            result["analysis"] = analysis
-            result["standard_numbers"] = sanitized_standard_numbers
+            
+            # Ensure standard_numbers is set for non-memory routes
+            if route != "memory" and "standard_numbers" not in result:
+                result["standard_numbers"] = sanitized_standard_numbers if 'sanitized_standard_numbers' in locals() else []
             
             # 5. Build query based on route
             debug_output.append(f"\n=== QUERY BUILDING PHASE ===")
             
-            if route == "including":
-                # Multi-standard filter query
-                result["query_object"] = self.query_builder.build_filter_query(
-                    sanitized_standard_numbers, 
+            if route == "memory":
+                # Memory filter query (same as including but with memory terms)
+                result["query_object"] = self.query_builder.build_memory_query(
+                    result["memory_terms"], 
                     sanitized_question, 
                     embeddings, 
                     debug
                 )
-                debug_output.append(f"✓ Built filter query for {len(sanitized_standard_numbers)} standard(s)")
+                debug_output.append(f"✓ Built memory query for {len(result['memory_terms'])} term(s)")
+                
+            elif route == "including":
+                # Multi-standard filter query
+                result["query_object"] = self.query_builder.build_filter_query(
+                    result["standard_numbers"], 
+                    sanitized_question, 
+                    embeddings, 
+                    debug
+                )
+                debug_output.append(f"✓ Built filter query for {len(result['standard_numbers'])} standard(s)")
                 
             elif route == "without":
                 # Textual search query
-                optimized_text = await self.prompt_manager.optimize_textual(sanitized_question)
+                optimized_text = await self.prompt_manager.optimize_textual(sanitized_question, conversation_memory)
                 result["query_object"] = self.query_builder.build_textual_query(
                     optimized_text, 
                     embeddings, 
@@ -340,7 +402,7 @@ class FlowManager:
             
             # 7. Generate final answer
             debug_output.append("\n=== ANSWER GENERATION PHASE ===")
-            answer = await self.prompt_manager.generate_answer(sanitized_question, chunks)
+            answer = await self.prompt_manager.generate_answer(sanitized_question, chunks, conversation_memory)
             result["answer"] = answer or "Kunne ikke generere et fullstendig svar basert på tilgjengelig informasjon."
             
             debug_output.append(f"✓ Final answer generated ({len(result['answer'])} characters)")

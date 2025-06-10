@@ -20,11 +20,18 @@ Generer et enkelt, omfattende spørsmål som best fanger opp informasjonen som t
 10. Hvis brukeren nevner deler av en standard, f.eks. M-004, skal du nevne den konkrete standarden det er snakk om eksplisitt, nemlig eksempelvis NORSOK M-004:2018. 
 
 
+**Bruk av samtaleminnet**
+I noen tilfeller kan det være nyttig å bruke samtaleminnet, særlig dersom spørsmålet er et oppfølgingsspørsmål fra et tidligere spørsmål. F. eks. dersom brukeren spør "Si mer om punkt 5", må du se til din besvarelse fra samtaleminnet, se hva punkt 5 var, og lage et spørsmål basert på dette, som ikke henviser til punkt 5, da dette er oppkonstruert. Er samtaleminnet 0 skal du ikke ta stilling til det. 
+
+
 ##Utdata
 
-Gi kun det genererte spørsmålet, uten anførselstegn eller annen tilleggsinformasjon.
+Gi kun det genererte spørsmålet, uten anførselstegn eller annen tilleggsinformasjon. Ta deg god tid når du genererer spørsmålet. 
 
 ## Inndata
 
 Brukerens siste spørsmål:
 {last_utterance}  
+
+Samtaleminne: 
+{conversation_memory}  

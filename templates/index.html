@@ -142,27 +142,25 @@
         }
         
         .submit-btn {
-            background: #ffffff;
-            color: #000C40;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: none;
             border-radius: 8px;
-            padding: 15px 30px;
-            font-size: 16px;
+            color: white;
+            padding: 12px 24px;
+            font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
-            min-width: 100px;
-            font-family: Arial, sans-serif;
+            transition: all 0.3s ease;
+            min-width: 80px;
         }
         
-        .submit-btn:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.9);
-            transform: translateY(-1px);
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
         }
         
         .submit-btn:disabled {
-            background: rgba(255, 255, 255, 0.3);
-            color: rgba(255, 255, 255, 0.6);
+            opacity: 0.6;
             cursor: not-allowed;
             transform: none;
         }
@@ -227,6 +225,32 @@
             color: rgba(255, 255, 255, 0.8);
             font-size: 12px;
             line-height: 1.4;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-top: 12px;
+        }
+        
+        .clear-btn {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            border: none;
+            border-radius: 6px;
+            color: white;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 100px;
+        }
+        
+        .clear-btn:hover {
+            background: linear-gradient(135deg, #ff5252 0%, #e53e3e 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
         }
         
         @media (max-width: 768px) {
@@ -303,7 +327,10 @@
                         placeholder="Skriv spørsmål om standarder..."
                         maxlength="1000"
                     ></textarea>
-                    <button id="submitBtn" class="submit-btn">Send</button>
+                    <div class="button-group">
+                        <button id="submitBtn" class="submit-btn">Send</button>
+                        <button id="clearSessionBtn" class="clear-btn" title="Tøm samtaleminnet og start ny session">🗑️ Ny Session</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -312,7 +339,30 @@
     <script>
         class StandardGPT {
             constructor() {
+                this.sessionId = this.generateSessionId();
+                this.conversationHistory = [];
                 this.init();
+            }
+            
+            generateSessionId() {
+                return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            }
+            
+            clearSession() {
+                this.sessionId = this.generateSessionId();
+                this.conversationHistory = [];
+                this.clearResults();
+                
+                // Clear session on server
+                fetch('/api/session/clear', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': this.sessionId
+                    }
+                }).catch(error => {
+                    console.log('Session clear request failed:', error);
+                });
             }
             
             init() {
@@ -327,6 +377,9 @@
                 
                 this.bindEvents();
                 this.questionInput.focus();
+                
+                // Display session info
+                console.log('StandardGPT initialized with session:', this.sessionId);
             }
             
             bindEvents() {
@@ -343,6 +396,12 @@
                     this.questionInput.style.height = 'auto';
                     this.questionInput.style.height = this.questionInput.scrollHeight + 'px';
                 });
+                
+                // Add clear session button functionality (if exists)
+                const clearBtn = document.getElementById('clearSessionBtn');
+                if (clearBtn) {
+                    clearBtn.addEventListener('click', () => this.clearSession());
+                }
             }
             
             async submitQuestion() {
@@ -362,6 +421,7 @@
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
+                            'X-Session-ID': this.sessionId  // NEW: Session tracking
                         },
                         body: JSON.stringify({ question })
                     });
@@ -374,6 +434,12 @@
                     }
                     
                     const data = await response.json();
+                    
+                    // Update session ID from server response if provided
+                    if (data.session_id) {
+                        this.sessionId = data.session_id;
+                    }
+                    
                     this.displayResults(data, processingTime);
                     
                 } catch (error) {
@@ -416,7 +482,20 @@
                 debugInfo += `Prosesseringstid: ${data.processing_time || 'N/A'}ms\\n`;
                 debugInfo += `Route: ${data.route_taken || 'N/A'}\\n`;
                 debugInfo += `Sikkerhet: ${data.security_sanitized ? 'Validert' : 'Ikke validert'}\\n`;
+                debugInfo += `Session ID: ${data.session_id || this.sessionId}\\n`;
                 debugInfo += `Feil: ${data.error || 'Ingen'}\\n\\n`;
+                
+                // Memory info (NEW)
+                if (data.flow_debug && data.flow_debug.conversation_memory) {
+                    debugInfo += '=== SAMTALEMINNE ===\\n';
+                    debugInfo += `Memory innhold: ${data.flow_debug.conversation_memory}\\n\\n`;
+                }
+                
+                // Memory terms (NEW)
+                if (data.flow_debug && data.flow_debug.memory_terms && data.flow_debug.memory_terms.length > 0) {
+                    debugInfo += '=== MEMORY TERMER ===\\n';
+                    debugInfo += `Funnet fra minne: ${data.flow_debug.memory_terms.join(', ')}\\n\\n`;
+                }
                 
                 // Optimized query
                 if (data.optimized) {
@@ -486,10 +565,18 @@
                     debugInfo += '\\n';
                 }
                 
+                // Memory debug details (NEW)
+                if (data.debug) {
+                    debugInfo += '=== SESSION DETALJER ===\\n';
+                    debugInfo += `Conversation memory lengde: ${data.debug.conversation_memory_length || 'N/A'} tegn\\n`;
+                    debugInfo += `Conversation entries: ${data.debug.conversation_entries || 'N/A'}\\n`;
+                    debugInfo += `Memory terms: ${data.debug.memory_terms ? data.debug.memory_terms.join(', ') : 'Ingen'}\\n\\n`;
+                }
+                
                 // Raw debug if available
                 if (data.debug) {
                     debugInfo += '=== RAW DEBUG ===\\n';
-                    debugInfo += data.debug + '\\n\\n';
+                    debugInfo += JSON.stringify(data.debug, null, 2) + '\\n\\n';
                 }
                 
                 // Full response object

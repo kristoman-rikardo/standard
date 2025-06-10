@@ -5,6 +5,8 @@ Elasticsearch client for StandardGPT with Cloud support
 import json
 import requests
 import base64
+import hashlib
+import time
 from typing import Dict, List, Optional
 from src.config import (
     ELASTICSEARCH_URL, 
@@ -16,6 +18,11 @@ from src.config import (
     EMBEDDING_API_KEY
 )
 from src.debug_utils import log_step_start, log_step_end, log_error, debug_print
+
+# Global embedding cache to avoid repeated API calls
+embedding_cache = {}
+cache_timestamps = {}
+CACHE_TTL = 3600  # 1 hour cache
 
 class ElasticsearchClient:
     """Custom Elasticsearch client for StandardGPT with Cloud support"""
@@ -233,7 +240,7 @@ class ElasticsearchClient:
     
     def get_embeddings_from_api(self, text: str, debug: bool = True) -> Optional[List[float]]:
         """
-        Get embeddings from custom API endpoint on Render
+        Get embeddings from custom API endpoint on Render with caching
         
         Args:
             text (str): Text to embed
@@ -250,6 +257,27 @@ class ElasticsearchClient:
                     debug_print("Embeddings", "EMBEDDING_API_ENDPOINT not configured, skipping embeddings")
                 log_step_end(2, "Get Embeddings", "Embeddings API not configured", debug)
                 return None
+            
+            # Check cache first
+            text_hash = hashlib.md5(text.encode()).hexdigest()
+            current_time = time.time()
+            
+            # Clean up expired cache entries
+            expired_keys = [k for k, timestamp in cache_timestamps.items() 
+                          if current_time - timestamp > CACHE_TTL]
+            for key in expired_keys:
+                embedding_cache.pop(key, None)
+                cache_timestamps.pop(key, None)
+            
+            # Return cached result if available
+            if text_hash in embedding_cache:
+                if debug:
+                    debug_print("Embeddings", f"Cache HIT for text hash: {text_hash[:8]}...")
+                log_step_end(2, "Get Embeddings", f"Cached: {len(embedding_cache[text_hash])} dimensions", debug)
+                return embedding_cache[text_hash]
+            
+            if debug:
+                debug_print("Embeddings", f"Cache MISS for text hash: {text_hash[:8]}...")
             
             # Prepare the request payload
             payload = {
@@ -309,9 +337,14 @@ class ElasticsearchClient:
             if not isinstance(embeddings, list) or not embeddings:
                 raise Exception("Embeddings API returned empty or invalid vector")
             
+            # Cache the result
+            embedding_cache[text_hash] = embeddings
+            cache_timestamps[text_hash] = current_time
+            
             if debug:
-                debug_print("Embeddings", f"Received {len(embeddings)} dimensional vector")
+                debug_print("Embeddings", f"Received {len(embeddings)} dimensional vector (cached)")
                 debug_print("Embeddings", f"Sample values: {embeddings[:3]}")
+                debug_print("Embeddings", f"Cache size: {len(embedding_cache)} entries")
             
             log_step_end(2, "Get Embeddings", f"Success: {len(embeddings)} dimensions", debug)
             return embeddings

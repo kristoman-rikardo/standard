@@ -1,8 +1,9 @@
 Du skal vurdere om følgende brukerinnspill enten:
 
-1. Inneholder et *standardnummer*, som f.eks. "NS 3451", "M-004", "EN ISO 9001:2015" eller lignende.
+1. Inneholder et *standardnummer*, som f.eks. "NS 3451", "M-004", "EN ISO 9001:2015" eller lignende. 
 2. Handler om noe som typisk står i en **personalhåndbok**, som f.eks. regler for ansatte, arbeidstid, permisjon, sykdom, ferie, lønn, oppsigelse, rettigheter, plikter osv.
-3. Ingen av delene.
+3. Gjelder en spesifikk eller flere standarder, men uten å nevne det eksplisitt, fordi det henger sammen med et tidligere spørsmål. 
+4. Ingen av delene.
 
 Et standardnummer består vanligvis av en kombinasjon av bokstaver (valgfritt), et nummer (vanligvis 3–6 siffer), og noen ganger et kolon og årstall (valgfritt).
 
@@ -10,27 +11,34 @@ Et standardnummer består vanligvis av en kombinasjon av bokstaver (valgfritt), 
 
 ### Regler:
 
-* Returner **"including"** hvis det inneholder noe som kan tolkes som et standardnummer.
-* Returner **"personal"** hvis det ikke inneholder et standardnummer, men handler om personalhåndbok-relaterte temaer.
-* Returner **"without"** hvis det verken inneholder et standardnummer eller handler om personaltemaer.
+* Returner **including** hvis det inneholder noe som kan tolkes som et standardnummer.
+* Returner **personal** hvis det ikke inneholder et standardnummer, men handler om personalhåndbok-relaterte temaer.
+* Returner **memory** hvis spørsmålet ikke inneholder standardnummer, men dreier seg om den aktuelle standarden det snakkes om i samtaleminnet. 
+* Returner **without** hvis det verken inneholder et standardnummer eller handler om personaltemaer.
 
-Vurder kun selve teksten – ikke gjett eller antag noe som ikke står eksplisitt. Du skal aldri returnere noe mer enn den valgte av de tre verdiene, uten anførselstegn eller noe som helst annen tekst. 
+VIKTIG: Du skal returnere BARE ett ord: including, personal, memory eller without. Ingen anførselstegn, ingen andre tegn, ingen forklaring.
+
+Du skal aldri velge "memory" dersom innholdet i samtaleminnet er tomt (inneholder bare "0"), eller hvis spørsmålet dreier seg om en eller flere andre standarder enn konteksten fra samtaleminnet forteller. 
 
 ---
 
 **Eksempel:**
 
-* "hva er krav i M-004" → `"including"`
-* "hvordan brukes NS 3457-8 i praksis?" → `"including"`
-* "har jeg rett på lønn under sykdom?" → `"personal"`
-* "kan man søke om permisjon uten lønn?" → `"personal"`
-* "hvordan fungerer en varmepumpe" → `"without"`
-* "forskjellen på bygningsdel og komponent?" → `"without"`
-* "når har vi lunsjpause?" → "personal"
+* "hva er krav i M-004" → including
+* "hvordan brukes NS 3457-8 i praksis?" → including
+* "har jeg rett på lønn under sykdom?" → personal
+* "kan man søke om permisjon uten lønn?" → personal
+* "hvordan fungerer en varmepumpe" → without
+* "forskjellen på bygningsdel og komponent?" → without
+* "når har vi lunsjpause?" → personal
+* "hva sier den om tykkelsen da?" → memory (så fremt samtaleminnet forteller at spørsmålet er stilt i kontekst av en eller flere spesifikke standarder)
 
 ---
 
-**Spørsmål:**
-`{last_utterance}`
+**Samtaleminne:**
+{conversation_memory}
 
-**Svar:** `"including"` / `"without"` / `"personal"`
+**Spørsmål:**
+{last_utterance}
+
+**Svar:**

@@ -18,7 +18,8 @@ class QueryObjectBuilder:
         query_files = {
             "filter": "qo_filter",
             "textual": "qo_textual", 
-            "personal": "qo_personal"
+            "personal": "qo_personal",
+            "memory": "qo_filter"  # Memory uses same logic as filter
         }
         
         query_objects = {}
@@ -27,7 +28,7 @@ class QueryObjectBuilder:
             try:
                 module = importlib.import_module(f".{filename}", package="src")
                 query_objects[name] = module
-                debug_print(f"QueryBuilder", f"Loaded {filename}")
+                debug_print(f"QueryBuilder", f"Loaded {filename} for {name}")
             except ImportError as e:
                 debug_print(f"QueryBuilder", f"Warning: Could not load {filename}: {e}")
                 query_objects[name] = None
@@ -220,6 +221,74 @@ class QueryObjectBuilder:
             
         except Exception as e:
             log_error("Build Personal Query", str(e), debug)
+            raise
+    
+    def build_memory_query(self, memory_terms, last_utterance, embeddings=None, debug=True):
+        """
+        Build query object for memory-based filtering (reuses filter logic)
+        
+        Args:
+            memory_terms (str or list): Terms extracted from memory context
+            last_utterance (str): Original user question
+            embeddings (list): Optional embeddings for semantic search
+            debug (bool): Enable debug logging
+            
+        Returns:
+            dict: Query object for Elasticsearch memory search
+        """
+        log_step_start("5d", "Build Memory Query", memory_terms, debug)
+        
+        try:
+            if not self.query_objects["memory"]:
+                raise ImportError("qo_filter module not available for memory queries")
+            
+            # Handle both string and list inputs for memory terms
+            if isinstance(memory_terms, list):
+                terms = [s.strip() for s in memory_terms if s.strip()]
+            elif isinstance(memory_terms, str):
+                terms = [s.strip() for s in memory_terms.split(",") if s.strip()]
+            else:
+                terms = []
+            
+            # Create query object using qo_filter (same logic as filter)
+            if hasattr(self.query_objects["memory"], "create_query"):
+                query_object = self.query_objects["memory"].create_query(
+                    standard_numbers=terms,
+                    question=last_utterance,
+                    embeddings=embeddings
+                )
+            else:
+                # Fallback to manual creation
+                query_object = {
+                    "query": {
+                        "bool": {
+                            "should": [
+                                {"terms": {"standard_number": terms}},
+                                {"match": {"content": last_utterance}}
+                            ],
+                            "minimum_should_match": 1
+                        }
+                    },
+                    "size": 80,
+                    "_source": ["content", "standard_number", "title"]
+                }
+                
+                if embeddings:
+                    query_object["query"]["bool"]["should"].append({
+                        "script_score": {
+                            "query": {"match_all": {}},
+                            "script": {
+                                "source": "cosineSimilarity(params.query_vector, 'content_vector') + 1.0",
+                                "params": {"query_vector": embeddings}
+                            }
+                        }
+                    })
+            
+            log_step_end("5d", "Build Memory Query", f"Memory query for {len(terms)} terms: {terms}", debug)
+            return query_object
+            
+        except Exception as e:
+            log_error("Build Memory Query", str(e), debug)
             raise
     
     def validate_query_object(self, query_object, query_type="unknown"):

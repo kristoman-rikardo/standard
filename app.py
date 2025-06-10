@@ -10,8 +10,9 @@ import logging
 import time
 import hashlib
 import json
+import uuid
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from functools import wraps
 from dotenv import load_dotenv
 
@@ -55,6 +56,62 @@ limiter = Limiter(
 # Simple in-memory cache for development
 cache = {}
 cache_expiry = {}
+
+# Session storage for conversation memory
+conversation_sessions = {}
+
+def get_session_id(request_obj) -> str:
+    """Generate or retrieve session ID from request headers"""
+    session_id = request_obj.headers.get('X-Session-ID')
+    if not session_id:
+        session_id = f"session_{int(time.time())}_{str(uuid.uuid4())[:8]}"
+    return session_id
+
+def get_conversation_memory(session_id: str) -> str:
+    """Get formatted conversation memory for session"""
+    if session_id not in conversation_sessions or not conversation_sessions[session_id]:
+        return "0"
+    
+    history = conversation_sessions[session_id]
+    if not history:
+        return "0"
+    
+    # Format last 10 exchanges (20 messages total)
+    formatted_parts = []
+    for entry in history[-10:]:
+        # Clean and escape user/system messages for prompt safety
+        user_clean = entry['user'].replace('`', "'").replace('"', "'").replace('\n', ' ').replace('\r', ' ')
+        system_clean = entry['system'].replace('`', "'").replace('"', "'").replace('\n', ' ').replace('\r', ' ')
+        
+        formatted_parts.append(f"Bruker: `{user_clean}`")
+        formatted_parts.append(f"System: `{system_clean}`")
+    
+    return "; ".join(formatted_parts) + ";"
+
+def update_conversation_memory(session_id: str, user_message: str, system_response: str):
+    """Update conversation memory with new exchange"""
+    if session_id not in conversation_sessions:
+        conversation_sessions[session_id] = []
+    
+    # Clean messages before storing
+    user_clean = user_message.strip()
+    system_clean = system_response.strip()[:400]  # Shorter limit to prevent token issues
+    
+    # Add new exchange
+    conversation_sessions[session_id].append({
+        'user': user_clean,
+        'system': system_clean,
+        'timestamp': datetime.utcnow().isoformat()
+    })
+    
+    # Keep only last 10 exchanges
+    if len(conversation_sessions[session_id]) > 10:
+        conversation_sessions[session_id] = conversation_sessions[session_id][-10:]
+
+def clear_conversation_memory(session_id: str):
+    """Clear conversation memory for session"""
+    if session_id in conversation_sessions:
+        del conversation_sessions[session_id]
 
 def cache_key(text: str) -> str:
     """Generate cache key from text"""
@@ -109,6 +166,52 @@ except Exception as e:
     app.logger.error(f"❌ Failed to initialize FlowManager: {e}")
     flow_manager = None
 
+# Warmup function to avoid cold starts
+async def warmup_services():
+    """Warmup services to avoid cold start delays"""
+    if flow_manager:
+        try:
+            app.logger.info("🔥 Starting service warmup...")
+            
+            # Warmup embedding API with a simple query
+            embedding_client = flow_manager.elasticsearch_client
+            warmup_embedding = await asyncio.get_event_loop().run_in_executor(
+                None, embedding_client.get_embeddings_from_api, "warmup query", False
+            )
+            if warmup_embedding:
+                app.logger.info("✅ Embedding API warmed up successfully")
+            else:
+                app.logger.warning("⚠️ Embedding API warmup returned no results")
+            
+            # Warmup OpenAI with a simple semantic optimization
+            prompt_manager = flow_manager.prompt_manager
+            warmup_openai = await asyncio.get_event_loop().run_in_executor(
+                None, prompt_manager.execute_optimize_semantic, "warmup", "", False
+            )
+            if warmup_openai:
+                app.logger.info("✅ OpenAI API warmed up successfully")
+            else:
+                app.logger.warning("⚠️ OpenAI API warmup failed")
+                
+            app.logger.info("🔥 Service warmup completed")
+            
+        except Exception as e:
+            app.logger.warning(f"⚠️ Service warmup failed: {e}")
+
+# Run warmup in background if FlowManager is available
+if flow_manager:
+    def run_warmup():
+        """Run warmup in a separate thread"""
+        try:
+            asyncio.run(warmup_services())
+        except Exception as e:
+            app.logger.warning(f"⚠️ Background warmup failed: {e}")
+    
+    # Start warmup in background thread
+    import threading
+    warmup_thread = threading.Thread(target=run_warmup, daemon=True)
+    warmup_thread.start()
+    app.logger.info("🚀 Background warmup started")
 
 class QueryRequest(BaseModel):
     """Pydantic model for validating query requests"""
@@ -198,7 +301,7 @@ def health_check():
 @app.route('/api/query', methods=['POST'])
 @limiter.limit("10 per minute")
 def api_query():
-    """Main API endpoint for processing queries with full debug support"""
+    """Main API endpoint for processing queries with full debug support and session management"""
     start_time = time.time()
     
     try:
@@ -207,7 +310,13 @@ def api_query():
         if not data:
             return jsonify({'error': 'No JSON data provided'}), 400
         
+        # Get or generate session ID
+        session_id = get_session_id(request)
+        conversation_memory = get_conversation_memory(session_id)
+        
         app.logger.info(f"📥 Received data: {data}")
+        app.logger.info(f"🔑 Session ID: {session_id}")
+        app.logger.info(f"🧠 Conversation memory length: {len(conversation_memory)} chars")
         
         # Validate input using Pydantic
         try:
@@ -226,28 +335,43 @@ def api_query():
         if not flow_manager:
             return jsonify({'error': 'FlowManager not available'}), 503
         
-        # Check cache first
-        query_cache_key = cache_key(f"query:{sanitized_question}")
+        # Check cache first (include session_id in cache key for memory-based queries)
+        query_cache_key = cache_key(f"query:{session_id}:{sanitized_question}")
         cached_response = get_from_cache(query_cache_key)
         if cached_response and not app.debug:  # Skip cache in debug mode
             app.logger.info("🚀 Returning cached response")
             cached_response['from_cache'] = True
             cached_response['processing_time'] = time.time() - start_time
+            cached_response['session_id'] = session_id
             return jsonify(cached_response)
         
-        # Process query through FlowManager with full debug
+        # Process query through FlowManager with conversation memory
+        # Optimize debug setting: only enable in development environment
+        enable_debug = app.debug and app.config.get('FLASK_ENV') != 'production'
+        
         try:
-            result = asyncio.run(flow_manager.process_query(sanitized_question, debug=True))
+            result = asyncio.run(flow_manager.process_query(
+                sanitized_question, 
+                conversation_memory=conversation_memory,
+                debug=enable_debug
+            ))
         except Exception as e:
             app.logger.error(f"❌ FlowManager error: {str(e)}")
             return jsonify({
                 'error': f'Processing failed: {str(e)}',
                 'processing_time': time.time() - start_time,
-                'success': False
+                'success': False,
+                'session_id': session_id
             }), 500
         
         # Calculate processing time
         processing_time = time.time() - start_time
+        
+        # Get the answer for memory storage
+        final_answer = result.get('answer', 'Kunne ikke generere svar')
+        
+        # Update conversation memory
+        update_conversation_memory(session_id, sanitized_question, final_answer)
         
         # Prepare comprehensive debug information
         debug_info = {
@@ -255,6 +379,9 @@ def api_query():
             'input_sanitized': was_sanitized,
             'question_length': len(sanitized_question),
             'cache_entries': len(cache),
+            'session_id': session_id,
+            'conversation_memory_length': len(conversation_memory),
+            'conversation_entries': len(conversation_sessions.get(session_id, [])),
             
             # Flow-specific debug info from FlowManager
             'route_taken': result.get('route_taken', 'unknown'),
@@ -262,6 +389,7 @@ def api_query():
             'optimized_question': result.get('optimized', sanitized_question),
             'embeddings_dimensions': len(result.get('embeddings', [])) if result.get('embeddings') else 0,
             'standard_numbers': result.get('standard_numbers', []),
+            'memory_terms': result.get('memory_terms', []),  # NEW: Memory-extracted terms
             
             # Query object (this is what you really want to see!)
             'query_object': result.get('query_object', {}),
@@ -290,35 +418,45 @@ def api_query():
             'answer_length': len(result.get('answer', '')),
         }
         
-        # Prepare response with comprehensive debug
+        # Prepare response with comprehensive debug (only in development)
         response_data = {
-            'answer': result.get('answer', 'Kunne ikke generere svar'),
-            'debug': debug_info if app.debug else None,
+            'answer': final_answer,
+            'debug': debug_info if enable_debug else None,
             'processing_time': processing_time,
             'security_sanitized': was_sanitized,
             'success': True,
             'from_cache': False,
+            'session_id': session_id,
             
-            # Additional debug fields for UI
+            # Additional debug fields for UI (only in development)
             'flow_debug': {
                 'route': result.get('route_taken', 'unknown'),
                 'analysis': result.get('analysis', 'unknown'),
                 'optimized': result.get('optimized', sanitized_question),
                 'embeddings_dim': len(result.get('embeddings', [])) if result.get('embeddings') else 0,
                 'standards': result.get('standard_numbers', []),
-                'query_object': result.get('query_object', {}),
+                'memory_terms': result.get('memory_terms', []),  # NEW: Memory terms
+                'conversation_memory': conversation_memory if enable_debug else None,  # NEW: Memory debug
+                'query_object': result.get('query_object', {}) if enable_debug else {},
                 'chunks_count': len(result.get('elasticsearch_response', {}).get('hits', {}).get('hits', [])),
-                'chunks': result.get('chunks', '')
-            } if app.debug else None
+                'chunks': result.get('chunks', '') if enable_debug else ''
+            } if enable_debug else {
+                'route': result.get('route_taken', 'unknown'),
+                'analysis': result.get('analysis', 'unknown'),
+                'standards': result.get('standard_numbers', []),
+                'memory_terms': result.get('memory_terms', []),
+                'chunks_count': len(result.get('elasticsearch_response', {}).get('hits', {}).get('hits', []))
+            }
         }
         
-        # Cache the response
+        # Cache the response (include session for memory-based caching)
         set_cache(query_cache_key, response_data, current_app.config.get('CACHE_TIMEOUT', 3600))
         
         # Log successful processing
         app.logger.info(f"✅ Query processed via FlowManager in {processing_time:.2f}s")
         app.logger.info(f"🛤️ Route taken: {result.get('route_taken', 'unknown')}")
         app.logger.info(f"📊 Chunks retrieved: {len(result.get('elasticsearch_response', {}).get('hits', {}).get('hits', []))}")
+        app.logger.info(f"🧠 Memory terms: {result.get('memory_terms', [])}")
         
         return jsonify(response_data)
         
@@ -331,7 +469,8 @@ def api_query():
         return jsonify({
             'error': error_message,
             'processing_time': processing_time,
-            'success': False
+            'success': False,
+            'session_id': get_session_id(request)
         }), 500
 
 
@@ -350,6 +489,35 @@ def clear_cache():
     })
 
 
+@app.route('/api/session/clear', methods=['POST'])
+def clear_session():
+    """Clear conversation memory for specific session"""
+    session_id = get_session_id(request)
+    clear_conversation_memory(session_id)
+    
+    return jsonify({
+        'message': 'Session memory cleared successfully',
+        'session_id': session_id,
+        'timestamp': datetime.utcnow().isoformat()
+    })
+
+
+@app.route('/api/session/stats')
+def session_stats():
+    """Get session and conversation memory statistics"""
+    session_id = get_session_id(request)
+    conversation_memory = get_conversation_memory(session_id)
+    
+    return jsonify({
+        'session_id': session_id,
+        'total_sessions': len(conversation_sessions),
+        'current_session_exchanges': len(conversation_sessions.get(session_id, [])),
+        'conversation_memory_length': len(conversation_memory),
+        'conversation_memory_preview': conversation_memory[:200] + '...' if len(conversation_memory) > 200 else conversation_memory,
+        'sessions_list': list(conversation_sessions.keys())[:10] if app.debug else []  # Only show in debug
+    })
+
+
 @app.route('/api/cache/stats')
 def cache_stats():
     """Get cache statistics"""
@@ -357,7 +525,9 @@ def cache_stats():
         'total_entries': len(cache),
         'cache_keys': list(cache.keys())[:10],  # Show first 10 keys
         'memory_estimate': f"{len(str(cache))} bytes",
-        'expired_entries': len([k for k in cache_expiry if datetime.now() > cache_expiry[k]])
+        'expired_entries': len([k for k in cache_expiry if datetime.now() > cache_expiry[k]]),
+        'session_count': len(conversation_sessions),
+        'total_conversations': sum(len(sessions) for sessions in conversation_sessions.values())
     })
 
 
