@@ -192,12 +192,6 @@ class FlowManager:
             result["optimized"] = optimized
             result["analysis"] = analysis
             
-            # 2. Get embeddings (can be done while we decide on extraction)
-            debug_output.append("\n=== EMBEDDINGS PHASE ===")
-            embeddings = self.elasticsearch_client.get_embeddings_from_api(optimized, debug)
-            debug_output.append(f"✓ Embeddings retrieved: {len(embeddings) if embeddings else 0} dimensions")
-            result["embeddings"] = embeddings
-            
             # 3. Extract terms AFTER analysis determines the route (CRITICAL CONSTRAINT)
             debug_output.append("\n=== EXTRACTION PHASE (POST-ANALYSIS) ===")
             
@@ -284,6 +278,19 @@ class FlowManager:
             if route != "memory" and "standard_numbers" not in result:
                 result["standard_numbers"] = sanitized_standard_numbers if 'sanitized_standard_numbers' in locals() else []
             
+            # 4.5. OPTIMIZED EMBEDDINGS - Only get if needed for this route
+            embeddings = None
+            debug_output.append("\n=== SMART EMBEDDINGS PHASE ===")
+            
+            # Only get embeddings for routes that actually use them
+            if route in ["without", "personal"]:  # Memory and including use simple wildcard matching
+                embeddings = self.elasticsearch_client.get_embeddings_from_api(optimized, debug)
+                debug_output.append(f"✓ Embeddings retrieved for {route} route: {len(embeddings) if embeddings else 0} dimensions")
+            else:
+                debug_output.append(f"✓ Skipping embeddings for {route} route (uses wildcard matching)")
+            
+            result["embeddings"] = embeddings or []
+            
             # 5. Build query based on route
             debug_output.append(f"\n=== QUERY BUILDING PHASE ===")
             
@@ -292,7 +299,7 @@ class FlowManager:
                 result["query_object"] = self.query_builder.build_memory_query(
                     result["memory_terms"], 
                     sanitized_question, 
-                    embeddings, 
+                    result["embeddings"], 
                     debug
                 )
                 debug_output.append(f"✓ Built memory query for {len(result['memory_terms'])} term(s)")
@@ -302,7 +309,7 @@ class FlowManager:
                 result["query_object"] = self.query_builder.build_filter_query(
                     result["standard_numbers"], 
                     sanitized_question, 
-                    embeddings, 
+                    result["embeddings"], 
                     debug
                 )
                 debug_output.append(f"✓ Built filter query for {len(result['standard_numbers'])} standard(s)")
@@ -312,7 +319,7 @@ class FlowManager:
                 optimized_text = await self.prompt_manager.optimize_textual(sanitized_question, conversation_memory)
                 result["query_object"] = self.query_builder.build_textual_query(
                     optimized_text, 
-                    embeddings, 
+                    result["embeddings"], 
                     debug
                 )
                 debug_output.append(f"✓ Built textual query with optimized text: {optimized_text}")
@@ -321,7 +328,7 @@ class FlowManager:
                 # Personal handbook query
                 result["query_object"] = self.query_builder.build_personal_query(
                     sanitized_question, 
-                    embeddings, 
+                    result["embeddings"], 
                     debug
                 )
                 debug_output.append("✓ Built personal handbook query")

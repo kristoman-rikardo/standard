@@ -306,7 +306,7 @@ class ElasticsearchClient:
                 EMBEDDING_API_ENDPOINT,
                 headers=headers,
                 json=payload,
-                timeout=30
+                timeout=10  # OPTIMIZED: Reduced from 30s to 10s
             )
             
             # Check response status
@@ -353,4 +353,11 @@ class ElasticsearchClient:
             log_error("Get Embeddings", str(e), debug)
             if debug:
                 debug_print("Embeddings", "Falling back to None (no embeddings)")
+                # ENHANCED: Log specific error type for better debugging
+                if "timeout" in str(e).lower():
+                    debug_print("Embeddings", "⚠️ TIMEOUT: Embedding API took longer than 10s")
+                elif "connection" in str(e).lower():
+                    debug_print("Embeddings", "⚠️ CONNECTION: Cannot reach embedding API")
+                else:
+                    debug_print("Embeddings", f"⚠️ ERROR: {str(e)[:100]}...")
             return None 

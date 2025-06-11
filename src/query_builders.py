@@ -239,7 +239,7 @@ class QueryObjectBuilder:
         log_step_start("5d", "Build Memory Query", memory_terms, debug)
         
         try:
-            if not self.query_objects["memory"]:
+            if not self.query_objects["filter"]:
                 raise ImportError("qo_filter module not available for memory queries")
             
             # Handle both string and list inputs for memory terms
@@ -250,9 +250,8 @@ class QueryObjectBuilder:
             else:
                 terms = []
             
-            # Create query object using qo_filter (same logic as filter)
-            if hasattr(self.query_objects["memory"], "create_query"):
-                query_object = self.query_objects["memory"].create_query(
+            if hasattr(self.query_objects["filter"], "create_query"):
+                query_object = self.query_objects["filter"].create_query(
                     standard_numbers=terms,
                     question=last_utterance,
                     embeddings=embeddings
