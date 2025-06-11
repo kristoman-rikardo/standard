@@ -79,12 +79,18 @@ class InputValidator:
     
     @staticmethod
     def validate_standard_numbers(standards: List[str]) -> ValidationResult:
-        """Validate extracted standard numbers"""
+        """Validate extracted standard numbers with improved pattern matching"""
         if not standards or not isinstance(standards, list):
             return ValidationResult(True, sanitized_input=[])
         
         sanitized_standards = []
-        standard_pattern = r'^[A-Z]{1,10}[\s\-]?[0-9]{1,10}(?:[\:\+][0-9A-Z\-]{1,20})?$'
+        # FIXED: Improved regex to handle standards like NS 3457-7, EN 1991-1-4, etc.
+        # Pattern breakdown:
+        # ^[A-Z]{1,10}        - Prefix letters (NS, ISO, EN, etc.)
+        # [\s\-]?             - Optional space or hyphen separator
+        # [0-9A-Z\-]{1,15}    - Main number part (can include hyphens and letters)
+        # (?:[\:\+][0-9A-Z\-]{1,20})? - Optional suffix like :2018 or +A1
+        standard_pattern = r'^[A-Z]{1,10}[\s\-]?[0-9A-Z\-]{1,15}(?:[\:\+][0-9A-Z\-]{1,20})?$'
         
         for std in standards:
             if not isinstance(std, str):
