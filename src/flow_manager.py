@@ -430,10 +430,27 @@ class FlowManager:
         except Exception as e:
             error_msg = f"Query processing failed: {str(e)}"
             self.logger.error(error_msg, exc_info=True)
+            
+            # Better error messages based on error type
+            if "NameResolutionError" in str(e) or "nodename nor servname" in str(e):
+                user_message = "Beklager, søketjenesten er for øyeblikket ikke tilgjengelig. Dette er et teknisk problem som må løses av administratoren."
+            elif "timeout" in str(e).lower():
+                user_message = "Søkeforespørselen tok for lang tid. Vennligst prøv igjen med et enklere spørsmål."
+            elif "unauthorized" in str(e).lower() or "403" in str(e):
+                user_message = "Tilgang til søketjenesten er begrenset. Kontakt administratoren."
+            else:
+                user_message = "Beklager, det oppstod en feil under behandling av spørsmålet ditt. Vennligst prøv igjen senere."
+            
             return {
-                "answer": "Beklager, det oppstod en feil under behandling av spørsmålet ditt. Vennligst prøv igjen senere.",
+                "answer": user_message,
                 "error": error_msg,
-                "processing_time": time.time() - start_time
+                "processing_time": time.time() - start_time,
+                "debug": {
+                    "analysis_result": "error",
+                    "route_taken": "error",
+                    "elasticsearch_available": False,
+                    "error_type": "elasticsearch_unavailable" if "NameResolutionError" in str(e) else "unknown"
+                }
             }
     
     def health_check(self, debug: bool = True) -> Dict[str, bool]:
