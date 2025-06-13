@@ -466,7 +466,13 @@ class FlowManager:
         Returns:
             dict: Complete processing result with answer
         """
-        from src.sse_manager import sse_manager, ProgressStage
+        # Import lokalt for å unngå sirkulære imports
+        try:
+            from src.sse_manager import sse_manager, ProgressStage
+        except ImportError as e:
+            self.logger.error(f"Failed to import sse_manager: {e}")
+            # Fallback til vanlig processing uten SSE
+            return await self.process_query(question, conversation_memory, debug)
         
         start_time = time.time()
         result = {"answer": "Kunne ikke generere svar"}
@@ -503,16 +509,37 @@ class FlowManager:
             if session_id:
                 sse_manager.send_progress(session_id, ProgressStage.EXTRACTION, "Trekker ut standarder...", 50, "📊")
             
-            extracted_standards, route_taken = await self._determine_route_and_extract(
-                sanitized_question, optimized, analysis, conversation_memory, debug
-            )
+            # Bruk eksisterende logikk fra process_query
+            if analysis.lower() == "memory":
+                memory_terms = await self.prompt_manager.extract_from_memory(sanitized_question, conversation_memory)
+                standard_numbers = []
+                result["memory_terms"] = memory_terms
+                route = "memory"
+            else:
+                standard_numbers = await self.prompt_manager.extract_standard_numbers(sanitized_question)
+                if isinstance(standard_numbers, str) and standard_numbers.strip():
+                    standard_numbers = [s.strip() for s in standard_numbers.split(',') if s.strip()]
+                elif not isinstance(standard_numbers, list):
+                    standard_numbers = []
+                memory_terms = []
+                result["memory_terms"] = []
+                
+                # Determine route
+                if analysis.lower() == "including" and standard_numbers and len(standard_numbers) > 0:
+                    route = "including"
+                elif "personal" in analysis.lower() or "personalhåndbok" in analysis.lower():
+                    route = "personal"
+                elif analysis.lower() == "without":
+                    route = "without"
+                else:
+                    route = "without"
             
-            result["extracted_standards"] = extracted_standards
-            result["route_taken"] = route_taken
+            result["extracted_standards"] = standard_numbers
+            result["route_taken"] = route
             
             # STEG 5: Routing
             if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.ROUTING, f"Velger søkestrategi: {route_taken}...", 65, "🛣️")
+                sse_manager.send_progress(session_id, ProgressStage.ROUTING, f"Velger søkestrategi: {route}...", 65, "🛣️")
             
             # STEG 6: Søk
             if session_id:
@@ -525,15 +552,30 @@ class FlowManager:
             result.update({
                 "chunks": temp_result.get("chunks", ""),
                 "query_object": temp_result.get("query_object", {}),
-                "elasticsearch_response": temp_result.get("elasticsearch_response", {})
+                "elasticsearch_response": temp_result.get("elasticsearch_response", {}),
+                "standard_numbers": temp_result.get("standard_numbers", [])
             })
             
             # STEG 7: Svar generering
             if session_id:
                 sse_manager.send_progress(session_id, ProgressStage.ANSWER_GENERATION, "Genererer svar...", 90, "✨")
             
-            # Generate answer
-            answer = temp_result.get("answer", "Kunne ikke generere svar")
+            # Use streaming answer generation instead of regular generation
+            chunks = temp_result.get("chunks", "")
+            
+            # Stream the answer generation
+            answer_tokens = []
+            async for token in self.prompt_manager.generate_answer_stream(
+                sanitized_question, 
+                chunks, 
+                conversation_memory,
+                sse_manager,
+                session_id
+            ):
+                answer_tokens.append(token)
+            
+            # Combine all tokens to get final answer
+            answer = ''.join(answer_tokens)
             result["answer"] = answer
             
             # STEG 8: Fullført
@@ -546,6 +588,7 @@ class FlowManager:
             
         except Exception as e:
             error_msg = f"Feil under behandling: {str(e)}"
+            self.logger.error(f"SSE processing error: {error_msg}", exc_info=True)
             if session_id:
                 sse_manager.send_error(session_id, error_msg)
             return {"answer": error_msg, "error": True, "processing_time": time.time() - start_time}

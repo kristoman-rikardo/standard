@@ -326,10 +326,22 @@
             padding: 8px 0;
             font-size: 14px;
             color: #6b7280;
+            transition: all 0.3s ease;
+        }
+        
+        .progress-item.completed {
+            color: #16a34a;
+        }
+        
+        .progress-item.active {
+            color: #1f2937;
+            font-weight: 500;
         }
         
         .progress-emoji {
             font-size: 18px;
+            min-width: 24px;
+            text-align: center;
         }
         
         .progress-text {
@@ -343,6 +355,19 @@
             border-top: 2px solid #22c55e;
             border-radius: 50%;
             animation: spin 1s linear infinite;
+        }
+        
+        .progress-checkmark {
+            width: 16px;
+            height: 16px;
+            background: #22c55e;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
         }
         
         @keyframes spin {
@@ -424,15 +449,15 @@
                 <!-- INPUT AREA -->
                 <div class="input-area">
                     <div class="input-container">
-                        <div class="input-wrapper">
-                            <textarea 
+                <div class="input-wrapper">
+                    <textarea 
                                 id="question-input" 
-                                class="question-input" 
+                        class="question-input"
                                 placeholder="Spør om standarder..." 
                                 rows="1"
                                 onkeydown="handleKeyDown(event)"
                                 oninput="autoResize(this)"
-                            ></textarea>
+                    ></textarea>
                             <button id="send-btn" class="send-btn" onclick="sendMessage()" disabled>
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
@@ -486,17 +511,24 @@
         // Send message
         async function sendMessage() {
             const input = document.getElementById('question-input');
-            const question = input.value.trim();
+            const question = input?.value?.trim();
             
-            if (!question || isProcessing) return;
+            if (!question || isProcessing || !input) return;
             
             isProcessing = true;
             input.value = '';
             input.style.height = 'auto';
-            document.getElementById('send-btn').disabled = true;
+            
+            const sendBtn = document.getElementById('send-btn');
+            if (sendBtn) {
+                sendBtn.disabled = true;
+            }
             
             // Hide welcome message
-            document.getElementById('welcome-message').classList.add('hidden');
+            const welcomeMessage = document.getElementById('welcome-message');
+            if (welcomeMessage) {
+                welcomeMessage.classList.add('hidden');
+            }
             
             // Add user message to chat
             addMessageToChat('user', question);
@@ -505,6 +537,8 @@
             showProgress();
             
             try {
+                console.log('🚀 Sending question:', question);
+                
                 // Start streaming request
                 const response = await fetch('/api/query/stream', {
                     method: 'POST',
@@ -518,39 +552,84 @@
                     })
                 });
                 
+                console.log('📡 Response status:', response.status);
+                console.log('📡 Response headers:', response.headers);
+                
                 if (!response.ok) {
-                    throw new Error('Failed to start streaming');
+                    const errorText = await response.text();
+                    console.error('❌ API Error Response:', errorText);
+                    throw new Error(`API returned ${response.status}: ${errorText.substring(0, 200)}...`);
                 }
                 
                 const data = await response.json();
+                console.log('✅ Stream response data:', data);
+                
                 currentSessionId = data.session_id;
                 
                 // Start listening to SSE stream
                 startEventStream(data.session_id);
                 
             } catch (error) {
-                console.error('Error sending message:', error);
+                console.error('❌ Error sending message:', error);
                 hideProgress();
-                addMessageToChat('assistant', 'Beklager, det oppstod en feil. Prøv igjen.');
+                
+                // Show detailed error to user
+                let errorMessage = 'Beklager, det oppstod en feil. ';
+                if (error.message.includes('Failed to fetch')) {
+                    errorMessage += 'Kan ikke koble til serveren. Sjekk internetttilkoblingen.';
+                } else if (error.message.includes('500')) {
+                    errorMessage += 'Serverfeil. Prøv igjen om litt.';
+                } else if (error.message.includes('400')) {
+                    errorMessage += 'Ugyldig spørsmål. Prøv å omformulere.';
+                } else {
+                    errorMessage += `Teknisk feil: ${error.message}`;
+                }
+                
+                addMessageToChat('assistant', errorMessage);
                 resetInput();
             }
         }
         
         // Start event stream
         function startEventStream(sessionId) {
+            console.log('🔌 Starting event stream for session:', sessionId);
+            
             if (eventSource) {
+                console.log('🔌 Closing existing event source');
                 eventSource.close();
             }
             
             eventSource = new EventSource(`/api/stream/${sessionId}`);
             let currentAnswer = '';
             let answerMessageElement = null;
+            let hasReceivedData = false;
+            
+            // Set timeout for connection
+            const connectionTimeout = setTimeout(() => {
+                if (!hasReceivedData) {
+                    console.error('⏰ SSE connection timeout');
+                    eventSource.close();
+                    hideProgress();
+                    addMessageToChat('assistant', 'Timeout: Serveren tok for lang tid å svare. Prøv igjen.');
+                    resetInput();
+                }
+            }, 30000); // 30 seconds timeout
+            
+            eventSource.onopen = function(event) {
+                console.log('✅ SSE connection opened');
+            };
             
             eventSource.onmessage = function(event) {
+                hasReceivedData = true;
+                clearTimeout(connectionTimeout);
+                
                 try {
                     const data = JSON.parse(event.data);
+                    console.log('📨 SSE message received:', data);
                     
-                    if (data.type === 'progress') {
+                    if (data.type === 'connected') {
+                        console.log('🔗 SSE connected for session:', data.session_id);
+                    } else if (data.type === 'progress') {
                         updateProgress(data.stage, data.message, data.emoji, data.progress);
                     } else if (data.type === 'token') {
                         if (!answerMessageElement) {
@@ -560,11 +639,13 @@
                         updateMessageContent(answerMessageElement, currentAnswer);
                         
                         if (data.is_final) {
+                            console.log('✅ Final token received');
                             hideProgress();
                             resetInput();
-                            loadConversations(); // Reload conversations to show new/updated
+                            loadConversations();
                         }
                     } else if (data.type === 'final_answer') {
+                        console.log('✅ Final answer received:', data.answer.substring(0, 100) + '...');
                         if (!answerMessageElement) {
                             answerMessageElement = addMessageToChat('assistant', data.answer);
                         } else {
@@ -574,19 +655,34 @@
                         resetInput();
                         loadConversations();
                     } else if (data.type === 'error') {
+                        console.error('❌ SSE error received:', data.error);
                         hideProgress();
-                        addMessageToChat('assistant', 'Beklager, det oppstod en feil under behandlingen.');
+                        addMessageToChat('assistant', `Feil: ${data.error}`);
                         resetInput();
+                    } else if (data.type === 'keepalive') {
+                        console.log('💓 SSE keepalive');
+                    } else {
+                        console.log('❓ Unknown SSE message type:', data.type);
                     }
                 } catch (error) {
-                    console.error('Error parsing SSE data:', error);
+                    console.error('❌ Error parsing SSE data:', error, 'Raw data:', event.data);
                 }
             };
             
             eventSource.onerror = function(error) {
-                console.error('SSE error:', error);
+                console.error('❌ SSE error:', error);
+                console.error('❌ SSE readyState:', eventSource.readyState);
+                
+                clearTimeout(connectionTimeout);
                 eventSource.close();
                 hideProgress();
+                
+                if (!hasReceivedData) {
+                    addMessageToChat('assistant', 'Kan ikke etablere tilkobling til serveren. Prøv igjen.');
+                } else {
+                    addMessageToChat('assistant', 'Tilkoblingen ble avbrutt. Prøv å stille spørsmålet på nytt.');
+                }
+                
                 resetInput();
             };
         }
@@ -654,11 +750,45 @@
                 progressItems.appendChild(existingItem);
             }
             
-            existingItem.innerHTML = `
-                <span class="progress-emoji">${emoji}</span>
-                <span class="progress-text">${message}</span>
-                ${progress < 100 ? '<div class="progress-spinner"></div>' : '<span style="color: #22c55e;">✓</span>'}
-            `;
+            // Mark as active
+            document.querySelectorAll('.progress-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            existingItem.classList.add('active');
+            
+            // Update content with spinner for active step
+            if (progress < 100) {
+                existingItem.innerHTML = `
+                    <span class="progress-emoji">${emoji}</span>
+                    <span class="progress-text">${message}</span>
+                    <div class="progress-spinner"></div>
+                `;
+            } else {
+                // Mark as completed with checkmark
+                existingItem.classList.remove('active');
+                existingItem.classList.add('completed');
+                existingItem.innerHTML = `
+                    <span class="progress-emoji">${emoji}</span>
+                    <span class="progress-text">${message}</span>
+                    <div class="progress-checkmark">✓</div>
+                `;
+                
+                // Mark all previous steps as completed too
+                const allItems = document.querySelectorAll('.progress-item');
+                const currentIndex = Array.from(allItems).indexOf(existingItem);
+                
+                for (let i = 0; i < currentIndex; i++) {
+                    const item = allItems[i];
+                    if (!item.classList.contains('completed')) {
+                        item.classList.add('completed');
+                        const checkmarkHtml = item.innerHTML.replace(
+                            /<div class="progress-spinner"><\/div>|<span style="color: #22c55e;">✓<\/span>/,
+                            '<div class="progress-checkmark">✓</div>'
+                        );
+                        item.innerHTML = checkmarkHtml;
+                    }
+                }
+            }
         }
         
         // Hide progress
@@ -679,9 +809,18 @@
         async function loadConversations() {
             try {
                 const response = await fetch('/api/conversations');
+                if (!response.ok) {
+                    throw new Error(`Failed to load conversations: ${response.status}`);
+                }
+                
                 const data = await response.json();
                 
                 const conversationsList = document.getElementById('conversations-list');
+                if (!conversationsList) {
+                    console.error('Conversations list element not found');
+                    return;
+                }
+                
                 conversationsList.innerHTML = '';
                 
                 if (data.conversations && data.conversations.length > 0) {
@@ -697,7 +836,12 @@
                         conversations.forEach(conv => {
                             const convElement = document.createElement('div');
                             convElement.className = 'conversation-item';
-                            convElement.onclick = () => loadConversation(conv.id);
+                            convElement.dataset.conversationId = conv.id; // Add data attribute
+                            
+                            // Use arrow function to preserve context and avoid null reference
+                            convElement.addEventListener('click', () => {
+                                loadConversation(conv.id);
+                            });
                             
                             convElement.innerHTML = `
                                 <div class="conversation-title">${conv.title}</div>
@@ -711,6 +855,10 @@
                 }
             } catch (error) {
                 console.error('Error loading conversations:', error);
+                const conversationsList = document.getElementById('conversations-list');
+                if (conversationsList) {
+                    conversationsList.innerHTML = '<div style="color: rgba(255,255,255,0.5); text-align: center; padding: 20px;">Kunne ikke laste samtaler</div>';
+                }
             }
         }
         
@@ -746,18 +894,30 @@
         async function loadConversation(conversationId) {
             try {
                 const response = await fetch(`/api/conversations/${conversationId}`);
+                if (!response.ok) {
+                    throw new Error(`Failed to load conversation: ${response.status}`);
+                }
+                
                 const data = await response.json();
                 
                 // Clear current chat
                 const messagesArea = document.getElementById('messages-area');
-                messagesArea.innerHTML = '';
-                document.getElementById('welcome-message').classList.add('hidden');
+                if (messagesArea) {
+                    messagesArea.innerHTML = '';
+                }
+                
+                const welcomeMessage = document.getElementById('welcome-message');
+                if (welcomeMessage) {
+                    welcomeMessage.classList.add('hidden');
+                }
                 
                 // Load messages
-                data.messages.forEach(msg => {
-                    addMessageToChat('user', msg.question);
-                    addMessageToChat('assistant', msg.answer);
-                });
+                if (data.messages && Array.isArray(data.messages)) {
+                    data.messages.forEach(msg => {
+                        addMessageToChat('user', msg.question);
+                        addMessageToChat('assistant', msg.answer);
+                    });
+                }
                 
                 // Update current conversation
                 currentConversationId = conversationId;
@@ -766,10 +926,19 @@
                 document.querySelectorAll('.conversation-item').forEach(item => {
                     item.classList.remove('active');
                 });
-                event.target.closest('.conversation-item').classList.add('active');
+                
+                // Find and activate the clicked conversation item
+                const conversationItems = document.querySelectorAll('.conversation-item');
+                conversationItems.forEach(item => {
+                    // Check if this item corresponds to the loaded conversation
+                    if (item.dataset && item.dataset.conversationId === conversationId) {
+                        item.classList.add('active');
+                    }
+                });
                 
             } catch (error) {
                 console.error('Error loading conversation:', error);
+                addMessageToChat('assistant', 'Kunne ikke laste samtalen. Prøv igjen.');
             }
         }
         
@@ -777,17 +946,28 @@
         function startNewChat() {
             // Clear current chat
             const messagesArea = document.getElementById('messages-area');
-            messagesArea.innerHTML = '';
-            document.getElementById('welcome-message').classList.remove('hidden');
+            if (messagesArea) {
+                messagesArea.innerHTML = '';
+            }
+            
+            const welcomeMessage = document.getElementById('welcome-message');
+            if (welcomeMessage) {
+                welcomeMessage.classList.remove('hidden');
+            }
             
             // Reset current conversation
             currentConversationId = null;
             currentSessionId = null;
             
             // Clear active conversation in sidebar
-            document.querySelectorAll('.conversation-item').forEach(item => {
-                item.classList.remove('active');
-            });
+            const conversationItems = document.querySelectorAll('.conversation-item');
+            if (conversationItems) {
+                conversationItems.forEach(item => {
+                    if (item && item.classList) {
+                        item.classList.remove('active');
+                    }
+                });
+            }
             
             // Reset input
             resetInput();

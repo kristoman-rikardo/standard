@@ -9,7 +9,7 @@ import openai
 from langchain.prompts import PromptTemplate
 from src.config import OPENAI_MODEL, OPENAI_API_KEY, OPENAI_TEMPERATURE, OPENAI_MODEL_DEFAULT, OPENAI_MODEL_ANSWER
 from src.debug_utils import log_step_start, log_step_end, log_error, debug_print
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, AsyncGenerator
 from pathlib import Path
 
 class PromptManager:
@@ -392,4 +392,83 @@ class PromptManager:
         Returns:
             str: Generated answer
         """
-        return self.execute_answer(question, chunks, conversation_memory, debug=False) 
+        return self.execute_answer(question, chunks, conversation_memory, debug=False)
+    
+    async def generate_answer_stream(self, question: str, chunks: str, conversation_memory: str = "", sse_manager=None, session_id: str = None) -> AsyncGenerator[str, None]:
+        """
+        Stream answer generation token by token
+        
+        Args:
+            question: Original user question
+            chunks: Formatted chunks from Elasticsearch
+            conversation_memory: Formatted conversation memory
+            sse_manager: SSE manager for sending progress updates
+            session_id: Session ID for SSE events
+            
+        Yields:
+            str: Individual tokens from the answer
+        """
+        from src.sse_manager import ProgressStage
+        
+        try:
+            # Send progress update for answer generation start
+            if sse_manager and session_id:
+                sse_manager.send_progress(
+                    session_id, 
+                    ProgressStage.ANSWER_GENERATION, 
+                    "Genererer svar token for token...", 
+                    85, 
+                    "✨"
+                )
+            
+            # Prepare prompt
+            prompt_input = self.create_prompt_input(question, chunks=chunks, conversation_memory=conversation_memory)
+            prompt_text = self.prompts["answer"].invoke(prompt_input).text
+            
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant that answers questions based on provided document chunks. Answer in Norwegian."},
+                {"role": "user", "content": prompt_text}
+            ]
+            
+            # Create streaming response
+            response = self.client.chat.completions.create(
+                model=OPENAI_MODEL_ANSWER,
+                messages=messages,
+                temperature=OPENAI_TEMPERATURE,
+                max_tokens=8000,
+                stream=True  # Enable streaming
+            )
+            
+            full_answer = ""
+            token_count = 0
+            
+            # Stream tokens one by one
+            for chunk in response:
+                if chunk.choices[0].delta.content is not None:
+                    token = chunk.choices[0].delta.content
+                    full_answer += token
+                    token_count += 1
+                    
+                    # Send token via SSE if available
+                    if sse_manager and session_id:
+                        sse_manager.send_token(session_id, token, is_final=False)
+                    
+                    # Yield token for other consumers
+                    yield token
+            
+            # Send final answer via SSE
+            if sse_manager and session_id:
+                sse_manager.send_final_answer(session_id, full_answer)
+                sse_manager.send_progress(
+                    session_id, 
+                    ProgressStage.COMPLETE, 
+                    f"Svar fullført! ({token_count} tokens)", 
+                    100, 
+                    "✅"
+                )
+            
+        except Exception as e:
+            error_msg = f"Streaming answer generation failed: {str(e)}"
+            if sse_manager and session_id:
+                sse_manager.send_error(session_id, error_msg)
+            raise Exception(error_msg) 
