@@ -453,6 +453,103 @@ class FlowManager:
                 }
             }
     
+    async def process_query_with_sse(self, question: str, conversation_memory: str = "0", session_id: str = None, debug: bool = True) -> Dict[str, Any]:
+        """
+        Process query med SSE progress updates
+        
+        Args:
+            question: User's question
+            conversation_memory: Formatted conversation memory string
+            session_id: SSE session ID for progress updates
+            debug: Enable debug output
+            
+        Returns:
+            dict: Complete processing result with answer
+        """
+        from src.sse_manager import sse_manager, ProgressStage
+        
+        start_time = time.time()
+        result = {"answer": "Kunne ikke generere svar"}
+        
+        try:
+            # STEG 1: Start
+            if session_id:
+                sse_manager.send_progress(session_id, ProgressStage.STARTED, "Starter behandling av spørsmål...", 5, "🚀")
+            
+            # STEG 2: Validering
+            if session_id:
+                sse_manager.send_progress(session_id, ProgressStage.VALIDATION, "Validerer inndata...", 15, "🔒")
+            
+            validation_result = self.validator.validate_question(question)
+            if not validation_result.is_valid:
+                if session_id:
+                    sse_manager.send_error(session_id, validation_result.error_message)
+                return {"answer": validation_result.error_message, "error": True}
+            
+            sanitized_question = validation_result.sanitized_input
+            
+            # STEG 3: Analyse
+            if session_id:
+                sse_manager.send_progress(session_id, ProgressStage.ANALYSIS, "Analyserer spørsmål...", 30, "🔍")
+            
+            optimization_task = self.prompt_manager.optimize_semantic(sanitized_question, conversation_memory)
+            analysis_task = self.prompt_manager.analyze_question(sanitized_question, conversation_memory)
+            
+            optimized, analysis = await asyncio.gather(optimization_task, analysis_task)
+            result["optimized"] = optimized
+            result["analysis"] = analysis
+            
+            # STEG 4: Extraktion
+            if session_id:
+                sse_manager.send_progress(session_id, ProgressStage.EXTRACTION, "Trekker ut standarder...", 50, "📊")
+            
+            extracted_standards, route_taken = await self._determine_route_and_extract(
+                sanitized_question, optimized, analysis, conversation_memory, debug
+            )
+            
+            result["extracted_standards"] = extracted_standards
+            result["route_taken"] = route_taken
+            
+            # STEG 5: Routing
+            if session_id:
+                sse_manager.send_progress(session_id, ProgressStage.ROUTING, f"Velger søkestrategi: {route_taken}...", 65, "🛣️")
+            
+            # STEG 6: Søk
+            if session_id:
+                sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Søker i standarddatabase...", 80, "🔎")
+            
+            # Use the existing process_query logic for search and query building
+            temp_result = await self.process_query(sanitized_question, conversation_memory, debug)
+            
+            # Copy relevant results
+            result.update({
+                "chunks": temp_result.get("chunks", ""),
+                "query_object": temp_result.get("query_object", {}),
+                "elasticsearch_response": temp_result.get("elasticsearch_response", {})
+            })
+            
+            # STEG 7: Svar generering
+            if session_id:
+                sse_manager.send_progress(session_id, ProgressStage.ANSWER_GENERATION, "Genererer svar...", 90, "✨")
+            
+            # Generate answer
+            answer = temp_result.get("answer", "Kunne ikke generere svar")
+            result["answer"] = answer
+            
+            # STEG 8: Fullført
+            if session_id:
+                sse_manager.send_progress(session_id, ProgressStage.COMPLETE, "Svar generert!", 100, "✅")
+                sse_manager.send_final_answer(session_id, answer)
+            
+            result["processing_time"] = time.time() - start_time
+            return result
+            
+        except Exception as e:
+            error_msg = f"Feil under behandling: {str(e)}"
+            if session_id:
+                sse_manager.send_error(session_id, error_msg)
+            return {"answer": error_msg, "error": True, "processing_time": time.time() - start_time}
+
     def health_check(self, debug: bool = True) -> Dict[str, bool]:
         """
         Check health of all system components

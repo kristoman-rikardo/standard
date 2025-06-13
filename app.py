@@ -531,6 +531,176 @@ def cache_stats():
     })
 
 
+@app.route('/api/stream/<session_id>')
+def stream_response(session_id):
+    """SSE endpoint for streaming responses"""
+    from src.sse_manager import create_sse_response
+    return create_sse_response(session_id)
+
+@app.route('/api/query/stream', methods=['POST'])
+@limiter.limit("5 per minute")
+def api_query_stream():
+    """Streaming version av query API"""
+    import asyncio
+    from src.sse_manager import sse_manager
+    from src.session_manager import session_manager
+    
+    start_time = time.time()
+    debug_enabled = request.args.get('debug', 'false').lower() == 'true'
+    
+    try:
+        # Valider request
+        if not request.is_json:
+            return jsonify({'error': 'Request must be JSON'}), 400
+        
+        data = request.get_json()
+        
+        # Valider input
+        try:
+            query_req = QueryRequest(**data)
+        except Exception as e:
+            return jsonify({'error': f'Invalid request data: {e}'}), 400
+        
+        # Generer session ID
+        session_id = f"stream_{int(time.time())}_{str(uuid.uuid4())[:8]}"
+        
+        # Opprett SSE session
+        sse_manager.create_session(session_id)
+        
+        # Get conversation memory
+        conversation_memory = get_conversation_memory(get_session_id(request))
+        
+        # Start async processing i bakgrunnen
+        async def process_async():
+            try:
+                if flow_manager:
+                    result = await flow_manager.process_query_with_sse(
+                        query_req.question, 
+                        conversation_memory, 
+                        session_id, 
+                        debug_enabled
+                    )
+                    
+                    # Lagre samtale hvis suksessfull
+                    if not result.get('error') and result.get('answer'):
+                        conversation_id = data.get('conversation_id')
+                        if conversation_id:
+                            session_manager.add_message_to_conversation(
+                                conversation_id, query_req.question, result['answer']
+                            )
+                        else:
+                            # Opprett ny samtale
+                            new_conversation_id = session_manager.create_conversation(
+                                query_req.question, result['answer']
+                            )
+                            result['conversation_id'] = new_conversation_id
+                        
+                        # Oppdater conversation memory
+                        update_conversation_memory(
+                            get_session_id(request), 
+                            query_req.question, 
+                            result['answer']
+                        )
+                    
+                else:
+                    sse_manager.send_error(session_id, "FlowManager ikke initialisert")
+                    
+            except Exception as e:
+                sse_manager.send_error(session_id, f"Feil under behandling: {str(e)}")
+        
+        # Start processing
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(process_async())
+        
+        return jsonify({
+            'session_id': session_id,
+            'stream_url': f'/api/stream/{session_id}',
+            'status': 'started'
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Stream API error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/conversations')
+def get_conversations():
+    """Hent samtalehistorikk"""
+    from src.session_manager import session_manager
+    
+    try:
+        conversations = session_manager.get_conversation_history()
+        
+        # Konverter til JSON format
+        result = []
+        for conv in conversations:
+            result.append({
+                'id': conv.id,
+                'title': conv.title,
+                'created_at': conv.created_at.isoformat(),
+                'last_message_at': conv.last_message_at.isoformat(),
+                'message_count': conv.message_count
+            })
+        
+        return jsonify({'conversations': result})
+        
+    except Exception as e:
+        app.logger.error(f"Get conversations error: {e}")
+        return jsonify({'error': 'Could not fetch conversations'}), 500
+
+@app.route('/api/conversations/<conversation_id>')
+def get_conversation(conversation_id):
+    """Hent spesifikk samtale med meldinger"""
+    from src.session_manager import session_manager
+    
+    try:
+        conversation = session_manager.get_conversation_by_id(conversation_id)
+        if not conversation:
+            return jsonify({'error': 'Conversation not found'}), 404
+        
+        messages = session_manager.get_conversation_messages(conversation_id)
+        
+        result = {
+            'id': conversation.id,
+            'title': conversation.title,
+            'created_at': conversation.created_at.isoformat(),
+            'last_message_at': conversation.last_message_at.isoformat(),
+            'messages': [
+                {
+                    'id': msg.id,
+                    'question': msg.question,
+                    'answer': msg.answer,
+                    'timestamp': msg.timestamp.isoformat()
+                }
+                for msg in messages
+            ]
+        }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        app.logger.error(f"Get conversation error: {e}")
+        return jsonify({'error': 'Could not fetch conversation'}), 500
+
+@app.route('/api/conversations', methods=['POST'])
+def create_new_conversation():
+    """Start ny samtale"""
+    try:
+        # Generer ny session ID
+        new_session_id = f"session_{int(time.time())}_{str(uuid.uuid4())[:8]}"
+        
+        # Clear conversation memory for new session
+        clear_conversation_memory(new_session_id)
+        
+        return jsonify({
+            'session_id': new_session_id,
+            'status': 'created'
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Create conversation error: {e}")
+        return jsonify({'error': 'Could not create conversation'}), 500
+
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 errors"""

@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>StandardGPT</title>
-    <!-- CSS Cache Buster: 2024-12-20-16:45 -->
     <style>
         * {
             margin: 0;
@@ -13,177 +12,337 @@
         }
         
         body {
-            font-family: Arial, sans-serif;
-            background: #000C40;
-            color: #ffffff;
-            min-height: 100vh;
-            padding: 30px 20px;
-            line-height: 1.5;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            background: #f8f9fa;
+            color: #333;
+            height: 100vh;
+            overflow: hidden;
         }
         
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        /* SIDEBAR DESIGN */
+        .sidebar {
+            width: 260px;
+            background: #1a2332;
+            color: white;
             display: flex;
             flex-direction: column;
-            min-height: calc(100vh - 60px);
-            gap: 30px;
+            position: relative;
         }
         
-        .header {
-            text-align: center;
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
         
-        .header h1 {
-            font-size: 36px;
-            font-weight: normal;
-            color: #ffffff;
-            margin-bottom: 10px;
-        }
-        
-        .content {
-            flex: 1;
+        .logo {
             display: flex;
-            flex-direction: column;
-            gap: 30px;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
         }
         
-        .output-section {
-            flex: 1;
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: white;
+            border-radius: 6px;
             display: flex;
-            flex-direction: column;
-            gap: 20px;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+            color: #1a2332;
         }
         
-        .answer-box {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
-            padding: 30px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            min-height: 200px;
-        }
-        
-        .answer-box h3 {
+        .logo-text {
             font-size: 18px;
             font-weight: 600;
-            margin-bottom: 20px;
-            color: #ffffff;
         }
         
-        .answer-content {
-            font-size: 16px;
-            white-space: pre-wrap;
-            color: #ffffff;
-            line-height: 1.6;
-        }
-        
-        .debug-box {
-            background: rgba(255, 255, 255, 0.02);
-            border-radius: 12px;
-            padding: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        
-        .debug-box h3 {
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 15px;
-            color: #ffffff;
-        }
-        
-        .debug-content {
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            white-space: pre-wrap;
-            color: rgba(255, 255, 255, 0.8);
-            background: rgba(0, 0, 0, 0.3);
-            padding: 15px;
+        .new-chat-btn {
+            width: 100%;
+            padding: 12px;
+            background: #22c55e;
+            color: white;
+            border: none;
             border-radius: 8px;
-            max-height: 400px;
-            overflow-y: auto;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
         }
         
-        .input-section {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 12px;
+        .new-chat-btn:hover {
+            background: #16a34a;
+            transform: translateY(-1px);
+        }
+        
+        .conversations-section {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .conversations-title {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .conversation-item {
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+        
+        .conversation-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .conversation-item.active {
+            background: rgba(34, 197, 94, 0.2);
+            border-color: rgba(34, 197, 94, 0.3);
+        }
+        
+        .conversation-date {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-bottom: 4px;
+        }
+        
+        .conversation-title {
+            font-size: 14px;
+            color: white;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        /* MAIN CONTENT DESIGN */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+        
+        .chat-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #e5e7eb;
+            background: white;
+        }
+        
+        .chat-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .messages-area {
+            flex: 1;
+            overflow-y: auto;
             padding: 30px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            scroll-behavior: smooth;
+        }
+        
+        .welcome-message {
+            text-align: center;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 60px 0;
+        }
+        
+        .welcome-title {
+            font-size: 32px;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 16px;
+        }
+        
+        .welcome-subtitle {
+            font-size: 18px;
+            color: #6b7280;
+            margin-bottom: 40px;
+        }
+        
+        .message {
+            margin-bottom: 30px;
+            max-width: 800px;
+        }
+        
+        .message.user {
+            margin-left: auto;
+        }
+        
+        .message.assistant {
+            margin-right: auto;
+        }
+        
+        .message-content {
+            padding: 16px 20px;
+            border-radius: 12px;
+            font-size: 16px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+        
+        .message.user .message-content {
+            background: #22c55e;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        
+        .message.assistant .message-content {
+            background: #f3f4f6;
+            color: #1f2937;
+            border-bottom-left-radius: 4px;
+        }
+        
+        /* STRUCTURED ANSWER STYLING */
+        .message.assistant .message-content ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .message.assistant .message-content li {
+            margin: 5px 0;
+        }
+        
+        .message.assistant .message-content strong {
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        /* INPUT AREA */
+        .input-area {
+            padding: 20px 30px;
+            border-top: 1px solid #e5e7eb;
+            background: white;
+        }
+        
+        .input-container {
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
         }
         
         .input-wrapper {
             display: flex;
-            gap: 15px;
-            align-items: stretch;
+            align-items: flex-end;
+            gap: 12px;
+            background: #f9fafb;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 12px;
+            transition: all 0.2s ease;
+        }
+        
+        .input-wrapper:focus-within {
+            border-color: #22c55e;
+            background: white;
         }
         
         .question-input {
             flex: 1;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            padding: 15px;
-            color: #ffffff;
-            font-size: 16px;
-            resize: vertical;
-            min-height: 60px;
-            font-family: Arial, sans-serif;
-            transition: all 0.2s ease;
-        }
-        
-        .question-input:focus {
+            background: transparent;
+            border: none;
             outline: none;
-            border-color: rgba(255, 255, 255, 0.4);
-            background: rgba(0, 0, 0, 0.4);
+            font-size: 16px;
+            color: #1f2937;
+            resize: none;
+            min-height: 24px;
+            max-height: 120px;
+            font-family: inherit;
         }
         
         .question-input::placeholder {
-            color: rgba(255, 255, 255, 0.5);
+            color: #9ca3af;
         }
         
-        .submit-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .send-btn {
+            width: 40px;
+            height: 40px;
+            background: #22c55e;
             border: none;
             border-radius: 8px;
             color: white;
-            padding: 12px 24px;
-            font-size: 14px;
-            font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
-            min-width: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
         }
         
-        .submit-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        .send-btn:hover:not(:disabled) {
+            background: #16a34a;
+            transform: translateY(-1px);
         }
         
-        .submit-btn:disabled {
-            opacity: 0.6;
+        .send-btn:disabled {
+            background: #d1d5db;
             cursor: not-allowed;
             transform: none;
         }
         
-        .loading {
+        /* PROGRESS INDICATOR */
+        .progress-container {
+            padding: 20px 30px;
+            border-top: 1px solid #e5e7eb;
+            background: #f9fafb;
             display: none;
-            text-align: center;
-            padding: 50px;
-            color: rgba(255, 255, 255, 0.8);
         }
         
-        .loading.active {
+        .progress-container.active {
             display: block;
         }
         
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid rgba(255, 255, 255, 0.2);
-            border-top: 3px solid #ffffff;
+        .progress-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0;
+            font-size: 14px;
+            color: #6b7280;
+        }
+        
+        .progress-emoji {
+            font-size: 18px;
+        }
+        
+        .progress-text {
+            flex: 1;
+        }
+        
+        .progress-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #e5e7eb;
+            border-top: 2px solid #22c55e;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin: 0 auto 20px auto;
         }
         
         @keyframes spin {
@@ -191,145 +350,95 @@
             100% { transform: rotate(360deg); }
         }
         
-        .hidden {
-            display: none;
-        }
-        
-        .status-info {
-            font-size: 14px;
-            color: rgba(255, 255, 255, 0.7);
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        .debug-section {
-            margin-bottom: 15px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            padding-bottom: 10px;
-        }
-        
-        .debug-section:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
-        }
-        
-        .debug-section h4 {
-            color: #ffffff;
-            font-size: 13px;
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
-        
-        .debug-text {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 12px;
-            line-height: 1.4;
-        }
-        
-        .button-group {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            margin-top: 12px;
-        }
-        
-        .clear-btn {
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-            border: none;
-            border-radius: 6px;
-            color: white;
-            padding: 8px 16px;
-            font-size: 12px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            min-width: 100px;
-        }
-        
-        .clear-btn:hover {
-            background: linear-gradient(135deg, #ff5252 0%, #e53e3e 100%);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
-        }
-        
+        /* RESPONSIVE DESIGN */
         @media (max-width: 768px) {
-            body {
-                padding: 20px 15px;
+            .sidebar {
+                width: 100%;
+                position: fixed;
+                top: 0;
+                left: -100%;
+                z-index: 1000;
+                transition: left 0.3s ease;
             }
             
-            .container {
-                gap: 20px;
+            .sidebar.open {
+                left: 0;
             }
             
-            .header h1 {
-                font-size: 28px;
-            }
-            
-            .input-wrapper {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .submit-btn {
+            .main-content {
                 width: 100%;
             }
-            
-            .answer-box,
-            .input-section {
-                padding: 20px;
-            }
-            
-            .debug-content {
-                font-size: 11px;
-                max-height: 300px;
-            }
+        }
+        
+        .hidden {
+            display: none !important;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>StandardGPT</h1>
-        </div>
-        
-        <div class="content">
-            <div class="output-section">
-                <div class="answer-box">
-                    <h3>Svar</h3>
-                    <div id="answerContent" class="answer-content">
-                        Skriv spørsmål nedenfor for å søke i standarder og personalhåndbøkene
-                    </div>
-                    <div id="statusInfo" class="status-info hidden">
-                        <div>Prosesseringstid: <span id="processingTime">-</span>ms</div>
-                        <div>Status: <span id="securityStatus">-</span></div>
+    <div class="app-container">
+        <!-- SIDEBAR -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-icon">S</div>
+                    <div>
+                        <div class="logo-text">Standard</div>
+                        <div style="font-size: 14px; color: rgba(255,255,255,0.7);">Norge</div>
                     </div>
                 </div>
-                
-                <div class="debug-box">
-                    <h3>Debug-informasjon</h3>
-                    <div id="debugContent" class="debug-content">
-                        Venter spørsmål...
-                    </div>
-                </div>
-                
-                <div id="loadingContainer" class="loading">
-                    <div class="spinner"></div>
-                    <div>Søker gjennom 70 000+ standarder og personalhåndbøkene...</div>
-                </div>
+                <button class="new-chat-btn" onclick="startNewChat()">
+                    <span>💬</span>
+                    Start ny samtale
+                </button>
             </div>
             
-            <div class="input-section">
-                <div class="input-wrapper">
-                    <textarea 
-                        id="questionInput" 
-                        class="question-input"
-                        placeholder="Skriv spørsmål om standarder..."
-                        maxlength="1000"
-                    ></textarea>
-                    <div class="button-group">
-                        <button id="submitBtn" class="submit-btn">Send</button>
-                        <button id="clearSessionBtn" class="clear-btn" title="Tøm samtaleminnet og start ny session">🗑️ Ny Session</button>
+            <div class="conversations-section">
+                <div class="conversations-title">
+                    <span>🖥️</span>
+                    Tidligere samtaler
+                </div>
+                <div id="conversations-list">
+                    <!-- Dynamisk innhold -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- MAIN CONTENT -->
+        <div class="main-content">
+            <div class="chat-container">
+                <div class="messages-area" id="messages-area">
+                    <div class="welcome-message" id="welcome-message">
+                        <div class="welcome-title">Hei, hva kan jeg hjelpe deg med?</div>
+                        <div class="welcome-subtitle">Spør om norske standarder og jeg vil hjelpe deg med å finne informasjonen du trenger.</div>
+                    </div>
+                </div>
+                
+                <!-- PROGRESS INDICATOR -->
+                <div class="progress-container" id="progress-container">
+                    <div id="progress-items">
+                        <!-- Dynamisk innhold -->
+                    </div>
+                </div>
+                
+                <!-- INPUT AREA -->
+                <div class="input-area">
+                    <div class="input-container">
+                        <div class="input-wrapper">
+                            <textarea 
+                                id="question-input" 
+                                class="question-input" 
+                                placeholder="Spør om standarder..." 
+                                rows="1"
+                                onkeydown="handleKeyDown(event)"
+                                oninput="autoResize(this)"
+                            ></textarea>
+                            <button id="send-btn" class="send-btn" onclick="sendMessage()" disabled>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -337,265 +446,352 @@
     </div>
 
     <script>
-        class StandardGPT {
-            constructor() {
-                this.sessionId = this.generateSessionId();
-                this.conversationHistory = [];
-                this.init();
-            }
+        // Global state
+        let currentConversationId = null;
+        let isProcessing = false;
+        let eventSource = null;
+        let currentSessionId = null;
+        
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            loadConversations();
+            setupInputValidation();
+        });
+        
+        // Setup input validation
+        function setupInputValidation() {
+            const input = document.getElementById('question-input');
+            const sendBtn = document.getElementById('send-btn');
             
-            generateSessionId() {
-                return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            }
-            
-            clearSession() {
-                this.sessionId = this.generateSessionId();
-                this.conversationHistory = [];
-                this.clearResults();
-                
-                // Clear session on server
-                fetch('/api/session/clear', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Session-ID': this.sessionId
-                    }
-                }).catch(error => {
-                    console.log('Session clear request failed:', error);
-                });
-            }
-            
-            init() {
-                this.questionInput = document.getElementById('questionInput');
-                this.submitBtn = document.getElementById('submitBtn');
-                this.answerContent = document.getElementById('answerContent');
-                this.debugContent = document.getElementById('debugContent');
-                this.loadingContainer = document.getElementById('loadingContainer');
-                this.statusInfo = document.getElementById('statusInfo');
-                this.processingTime = document.getElementById('processingTime');
-                this.securityStatus = document.getElementById('securityStatus');
-                
-                this.bindEvents();
-                this.questionInput.focus();
-                
-                // Display session info
-                console.log('StandardGPT initialized with session:', this.sessionId);
-            }
-            
-            bindEvents() {
-                this.submitBtn.addEventListener('click', () => this.submitQuestion());
-                this.questionInput.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                        e.preventDefault();
-                        this.submitQuestion();
-                    }
-                });
-                
-                // Auto-resize textarea
-                this.questionInput.addEventListener('input', () => {
-                    this.questionInput.style.height = 'auto';
-                    this.questionInput.style.height = this.questionInput.scrollHeight + 'px';
-                });
-                
-                // Add clear session button functionality (if exists)
-                const clearBtn = document.getElementById('clearSessionBtn');
-                if (clearBtn) {
-                    clearBtn.addEventListener('click', () => this.clearSession());
-                }
-            }
-            
-            async submitQuestion() {
-                const question = this.questionInput.value.trim();
-                if (!question || question.length < 3) {
-                    this.showError('Spørsmål må være minst 3 tegn');
-                    return;
-                }
-                
-                this.setLoading(true);
-                this.clearResults();
-                
-                const startTime = Date.now();
-                
-                try {
-                    const response = await fetch('/api/query', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Session-ID': this.sessionId  // NEW: Session tracking
-                        },
-                        body: JSON.stringify({ question })
-                    });
-                    
-                    const endTime = Date.now();
-                    const processingTime = endTime - startTime;
-                    
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    }
-                    
-                    const data = await response.json();
-                    
-                    // Update session ID from server response if provided
-                    if (data.session_id) {
-                        this.sessionId = data.session_id;
-                    }
-                    
-                    this.displayResults(data, processingTime);
-                    
-                } catch (error) {
-                    this.showError('Feil ved spørring: ' + error.message);
-                } finally {
-                    this.setLoading(false);
-                }
-            }
-            
-            setLoading(loading) {
-                this.submitBtn.disabled = loading;
-                this.submitBtn.textContent = loading ? 'Søker...' : 'Send';
-                this.loadingContainer.classList.toggle('active', loading);
-            }
-            
-            clearResults() {
-                this.answerContent.textContent = '';
-                this.debugContent.textContent = '';
-                this.statusInfo.classList.add('hidden');
-            }
-            
-            displayResults(data, processingTime) {
-                // Display answer
-                this.answerContent.textContent = data.answer || 'Ingen svar mottatt';
-                
-                // Display status
-                this.processingTime.textContent = processingTime;
-                this.securityStatus.textContent = data.security_sanitized ? 'Validert' : 'Ikke validert';
-                this.statusInfo.classList.remove('hidden');
-                
-                // Display debug information
-                this.displayDebugInfo(data);
-            }
-            
-            displayDebugInfo(data) {
-                let debugInfo = '';
-                
-                // Basic info
-                debugInfo += '=== SYSTEM INFO ===\\n';
-                debugInfo += `Prosesseringstid: ${data.processing_time || 'N/A'}ms\\n`;
-                debugInfo += `Route: ${data.route_taken || 'N/A'}\\n`;
-                debugInfo += `Sikkerhet: ${data.security_sanitized ? 'Validert' : 'Ikke validert'}\\n`;
-                debugInfo += `Session ID: ${data.session_id || this.sessionId}\\n`;
-                debugInfo += `Feil: ${data.error || 'Ingen'}\\n\\n`;
-                
-                // Memory info (NEW)
-                if (data.flow_debug && data.flow_debug.conversation_memory) {
-                    debugInfo += '=== SAMTALEMINNE ===\\n';
-                    debugInfo += `Memory innhold: ${data.flow_debug.conversation_memory}\\n\\n`;
-                }
-                
-                // Memory terms (NEW)
-                if (data.flow_debug && data.flow_debug.memory_terms && data.flow_debug.memory_terms.length > 0) {
-                    debugInfo += '=== MEMORY TERMER ===\\n';
-                    debugInfo += `Funnet fra minne: ${data.flow_debug.memory_terms.join(', ')}\\n\\n`;
-                }
-                
-                // Optimized query
-                if (data.optimized) {
-                    debugInfo += '=== SEMANTISK OPTIMISERING ===\\n';
-                    debugInfo += `Input: ${data.optimized}\\n\\n`;
-                }
-                
-                // Analysis
-                if (data.analysis) {
-                    debugInfo += '=== ANALYSE ===\\n';
-                    debugInfo += `Resultat: ${data.analysis}\\n\\n`;
-                }
-                
-                // Standard numbers
-                if (data.standard_numbers && data.standard_numbers.length > 0) {
-                    debugInfo += '=== STANDARD NUMRE ===\\n';
-                    debugInfo += `Funnet: ${data.standard_numbers.join(', ')}\\n\\n`;
-                }
-                
-                // Embeddings
-                if (data.embeddings) {
-                    debugInfo += '=== EMBEDDINGS ===\\n';
-                    debugInfo += `Dimensjoner: ${data.embeddings.length}\\n`;
-                    debugInfo += `Sample: [${data.embeddings.slice(0, 5).map(x => x.toFixed(3)).join(', ')}...]\\n\\n`;
-                }
-                
-                // Query object
-                if (data.query_object) {
-                    debugInfo += '=== ELASTICSEARCH QUERY ===\\n';
-                    debugInfo += JSON.stringify(data.query_object, null, 2) + '\\n\\n';
-                }
-                
-                // Elasticsearch response
-                if (data.elasticsearch_response) {
-                    const hits = data.elasticsearch_response.hits?.hits || [];
-                    debugInfo += '=== ELASTICSEARCH RESPONS ===\\n';
-                    debugInfo += `Totale hits: ${data.elasticsearch_response.hits?.total?.value || 0}\\n`;
-                    debugInfo += `Returnerte hits: ${hits.length}\\n`;
-                    
-                    if (hits.length > 0) {
-                        debugInfo += '\\nFørste 3 hits:\\n';
-                        hits.slice(0, 3).forEach((hit, i) => {
-                            const source = hit._source || {};
-                            debugInfo += `\\nHit ${i + 1}:\\n`;
-                            debugInfo += `  Score: ${hit._score || 'N/A'}\\n`;
-                            debugInfo += `  Referanse: ${source.reference || 'N/A'}\\n`;
-                            debugInfo += `  Side: ${source.page || 'N/A'}\\n`;
-                            debugInfo += `  Tekst lengde: ${(source.text || '').length} tegn\\n`;
-                            debugInfo += `  Tekst preview: ${(source.text || '').substring(0, 100)}...\\n`;
-                        });
-                    }
-                    debugInfo += '\\n';
-                }
-                
-                // Chunks
-                if (data.chunks) {
-                    debugInfo += '=== CHUNKS ===\\n';
-                    debugInfo += `Total lengde: ${data.chunks.length} tegn\\n`;
-                    
-                    const chunkSections = data.chunks.split('\\n\\n');
-                    debugInfo += `Antall chunks: ${chunkSections.length}\\n`;
-                    
-                    if (chunkSections.length > 0) {
-                        debugInfo += '\\nFørste chunk:\\n';
-                        debugInfo += chunkSections[0].substring(0, 500) + '...\\n';
-                    }
-                    debugInfo += '\\n';
-                }
-                
-                // Memory debug details (NEW)
-                if (data.debug) {
-                    debugInfo += '=== SESSION DETALJER ===\\n';
-                    debugInfo += `Conversation memory lengde: ${data.debug.conversation_memory_length || 'N/A'} tegn\\n`;
-                    debugInfo += `Conversation entries: ${data.debug.conversation_entries || 'N/A'}\\n`;
-                    debugInfo += `Memory terms: ${data.debug.memory_terms ? data.debug.memory_terms.join(', ') : 'Ingen'}\\n\\n`;
-                }
-                
-                // Raw debug if available
-                if (data.debug) {
-                    debugInfo += '=== RAW DEBUG ===\\n';
-                    debugInfo += JSON.stringify(data.debug, null, 2) + '\\n\\n';
-                }
-                
-                // Full response object
-                debugInfo += '=== FULL RESPONSE ===\\n';
-                debugInfo += JSON.stringify(data, null, 2);
-                
-                this.debugContent.textContent = debugInfo;
-            }
-            
-            showError(message) {
-                this.answerContent.textContent = 'Feil: ' + message;
-                this.debugContent.textContent = 'Error: ' + message + '\\nTimestamp: ' + new Date().toISOString();
+            input.addEventListener('input', function() {
+                const hasText = this.value.trim().length > 0;
+                sendBtn.disabled = !hasText || isProcessing;
+            });
+        }
+        
+        // Auto resize textarea
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        }
+        
+        // Handle key down
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
             }
         }
         
-        // Initialize app
-        document.addEventListener('DOMContentLoaded', () => {
-            new StandardGPT();
-        });
+        // Send message
+        async function sendMessage() {
+            const input = document.getElementById('question-input');
+            const question = input.value.trim();
+            
+            if (!question || isProcessing) return;
+            
+            isProcessing = true;
+            input.value = '';
+            input.style.height = 'auto';
+            document.getElementById('send-btn').disabled = true;
+            
+            // Hide welcome message
+            document.getElementById('welcome-message').classList.add('hidden');
+            
+            // Add user message to chat
+            addMessageToChat('user', question);
+            
+            // Show progress
+            showProgress();
+            
+            try {
+                // Start streaming request
+                const response = await fetch('/api/query/stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': currentSessionId || 'default'
+                    },
+                    body: JSON.stringify({
+                        question: question,
+                        conversation_id: currentConversationId
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to start streaming');
+                }
+                
+                const data = await response.json();
+                currentSessionId = data.session_id;
+                
+                // Start listening to SSE stream
+                startEventStream(data.session_id);
+                
+            } catch (error) {
+                console.error('Error sending message:', error);
+                hideProgress();
+                addMessageToChat('assistant', 'Beklager, det oppstod en feil. Prøv igjen.');
+                resetInput();
+            }
+        }
+        
+        // Start event stream
+        function startEventStream(sessionId) {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            eventSource = new EventSource(`/api/stream/${sessionId}`);
+            let currentAnswer = '';
+            let answerMessageElement = null;
+            
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'progress') {
+                        updateProgress(data.stage, data.message, data.emoji, data.progress);
+                    } else if (data.type === 'token') {
+                        if (!answerMessageElement) {
+                            answerMessageElement = addMessageToChat('assistant', '');
+                        }
+                        currentAnswer += data.token;
+                        updateMessageContent(answerMessageElement, currentAnswer);
+                        
+                        if (data.is_final) {
+                            hideProgress();
+                            resetInput();
+                            loadConversations(); // Reload conversations to show new/updated
+                        }
+                    } else if (data.type === 'final_answer') {
+                        if (!answerMessageElement) {
+                            answerMessageElement = addMessageToChat('assistant', data.answer);
+                        } else {
+                            updateMessageContent(answerMessageElement, data.answer);
+                        }
+                        hideProgress();
+                        resetInput();
+                        loadConversations();
+                    } else if (data.type === 'error') {
+                        hideProgress();
+                        addMessageToChat('assistant', 'Beklager, det oppstod en feil under behandlingen.');
+                        resetInput();
+                    }
+                } catch (error) {
+                    console.error('Error parsing SSE data:', error);
+                }
+            };
+            
+            eventSource.onerror = function(error) {
+                console.error('SSE error:', error);
+                eventSource.close();
+                hideProgress();
+                resetInput();
+            };
+        }
+        
+        // Add message to chat
+        function addMessageToChat(role, content) {
+            const messagesArea = document.getElementById('messages-area');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.innerHTML = formatMessage(content);
+            
+            messageDiv.appendChild(contentDiv);
+            messagesArea.appendChild(messageDiv);
+            
+            // Scroll to bottom
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+            
+            return contentDiv;
+        }
+        
+        // Format message content
+        function formatMessage(content) {
+            // Convert bullet points to HTML
+            content = content.replace(/^[\-\*\•]\s+(.+)$/gm, '<li>$1</li>');
+            content = content.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+            
+            // Format bold text
+            content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            
+            // Format line breaks
+            content = content.replace(/\n/g, '<br>');
+            
+            return content;
+        }
+        
+        // Update message content
+        function updateMessageContent(element, content) {
+            element.innerHTML = formatMessage(content);
+            
+            // Scroll to bottom
+            const messagesArea = document.getElementById('messages-area');
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+        }
+        
+        // Show progress
+        function showProgress() {
+            document.getElementById('progress-container').classList.add('active');
+            document.getElementById('progress-items').innerHTML = '';
+        }
+        
+        // Update progress
+        function updateProgress(stage, message, emoji, progress) {
+            const progressItems = document.getElementById('progress-items');
+            
+            // Check if this stage already exists
+            let existingItem = document.querySelector(`[data-stage="${stage}"]`);
+            
+            if (!existingItem) {
+                existingItem = document.createElement('div');
+                existingItem.className = 'progress-item';
+                existingItem.setAttribute('data-stage', stage);
+                progressItems.appendChild(existingItem);
+            }
+            
+            existingItem.innerHTML = `
+                <span class="progress-emoji">${emoji}</span>
+                <span class="progress-text">${message}</span>
+                ${progress < 100 ? '<div class="progress-spinner"></div>' : '<span style="color: #22c55e;">✓</span>'}
+            `;
+        }
+        
+        // Hide progress
+        function hideProgress() {
+            document.getElementById('progress-container').classList.remove('active');
+        }
+        
+        // Reset input
+        function resetInput() {
+            isProcessing = false;
+            const input = document.getElementById('question-input');
+            const sendBtn = document.getElementById('send-btn');
+            
+            sendBtn.disabled = input.value.trim().length === 0;
+        }
+        
+        // Load conversations
+        async function loadConversations() {
+            try {
+                const response = await fetch('/api/conversations');
+                const data = await response.json();
+                
+                const conversationsList = document.getElementById('conversations-list');
+                conversationsList.innerHTML = '';
+                
+                if (data.conversations && data.conversations.length > 0) {
+                    // Group by date
+                    const groupedConversations = groupConversationsByDate(data.conversations);
+                    
+                    for (const [dateGroup, conversations] of Object.entries(groupedConversations)) {
+                        const dateHeader = document.createElement('div');
+                        dateHeader.className = 'conversation-date';
+                        dateHeader.textContent = dateGroup;
+                        conversationsList.appendChild(dateHeader);
+                        
+                        conversations.forEach(conv => {
+                            const convElement = document.createElement('div');
+                            convElement.className = 'conversation-item';
+                            convElement.onclick = () => loadConversation(conv.id);
+                            
+                            convElement.innerHTML = `
+                                <div class="conversation-title">${conv.title}</div>
+                            `;
+                            
+                            conversationsList.appendChild(convElement);
+                        });
+                    }
+                } else {
+                    conversationsList.innerHTML = '<div style="color: rgba(255,255,255,0.5); text-align: center; padding: 20px;">Ingen samtaler ennå</div>';
+                }
+            } catch (error) {
+                console.error('Error loading conversations:', error);
+            }
+        }
+        
+        // Group conversations by date
+        function groupConversationsByDate(conversations) {
+            const groups = {};
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            
+            conversations.forEach(conv => {
+                const convDate = new Date(conv.last_message_at);
+                let dateKey;
+                
+                if (convDate.toDateString() === today.toDateString()) {
+                    dateKey = 'I dag';
+                } else if (convDate.toDateString() === yesterday.toDateString()) {
+                    dateKey = 'Denne uken';
+                } else {
+                    dateKey = 'Tidligere';
+                }
+                
+                if (!groups[dateKey]) {
+                    groups[dateKey] = [];
+                }
+                groups[dateKey].push(conv);
+            });
+            
+            return groups;
+        }
+        
+        // Load conversation
+        async function loadConversation(conversationId) {
+            try {
+                const response = await fetch(`/api/conversations/${conversationId}`);
+                const data = await response.json();
+                
+                // Clear current chat
+                const messagesArea = document.getElementById('messages-area');
+                messagesArea.innerHTML = '';
+                document.getElementById('welcome-message').classList.add('hidden');
+                
+                // Load messages
+                data.messages.forEach(msg => {
+                    addMessageToChat('user', msg.question);
+                    addMessageToChat('assistant', msg.answer);
+                });
+                
+                // Update current conversation
+                currentConversationId = conversationId;
+                
+                // Update active conversation in sidebar
+                document.querySelectorAll('.conversation-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                event.target.closest('.conversation-item').classList.add('active');
+                
+            } catch (error) {
+                console.error('Error loading conversation:', error);
+            }
+        }
+        
+        // Start new chat
+        function startNewChat() {
+            // Clear current chat
+            const messagesArea = document.getElementById('messages-area');
+            messagesArea.innerHTML = '';
+            document.getElementById('welcome-message').classList.remove('hidden');
+            
+            // Reset current conversation
+            currentConversationId = null;
+            currentSessionId = null;
+            
+            // Clear active conversation in sidebar
+            document.querySelectorAll('.conversation-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            // Reset input
+            resetInput();
+        }
     </script>
 </body>
 </html> 
