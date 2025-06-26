@@ -85,6 +85,28 @@
             transform: translateY(-1px);
         }
         
+        .fresh-session-btn {
+            width: 100%;
+            padding: 8px 12px;
+            background: #6b7280;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            margin-top: 8px;
+        }
+        
+        .fresh-session-btn:hover {
+            background: #4b5563;
+            transform: translateY(-1px);
+        }
+        
         .conversations-section {
             flex: 1;
             padding: 20px;
@@ -412,9 +434,14 @@
                         <div style="font-size: 14px; color: rgba(255,255,255,0.7);">Norge</div>
                     </div>
                 </div>
-                <button class="new-chat-btn" onclick="startNewChat()">
-                    <span>💬</span>
-                    Start ny samtale
+                <button class="new-chat-btn" onclick="newConversation()">
+                    <span>➕</span>
+                    Ny samtale
+                </button>
+                
+                <button class="fresh-session-btn" onclick="startFreshSession()" title="Start helt frisk session (sletter samtaleminne)">
+                    <span>🔄</span>
+                    Frisk session
                 </button>
             </div>
             
@@ -477,10 +504,26 @@
         let eventSource = null;
         let currentSessionId = null;
         
+        // NYE VARIABLER for conversation memory tracking
+        let lastUserMessage = '';
+        let lastSystemResponse = '';
+        
         // Initialize app
         document.addEventListener('DOMContentLoaded', function() {
+            // Generate or retrieve session ID
+            currentSessionId = localStorage.getItem('standardgpt_session_id');
+            if (!currentSessionId) {
+                currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+                localStorage.setItem('standardgpt_session_id', currentSessionId);
+            }
+            console.log('🆔 Using session ID:', currentSessionId);
+            
             loadConversations();
             setupInputValidation();
+            
+            // Focus input
+            const input = document.getElementById('question-input');
+            if (input) input.focus();
         });
         
         // Setup input validation
@@ -510,20 +553,20 @@
         
         // Send message
         async function sendMessage() {
-            const input = document.getElementById('question-input');
-            const question = input?.value?.trim();
+            if (isProcessing) return;
             
-            if (!question || isProcessing || !input) return;
+            const input = document.getElementById('question-input');
+            const question = input.value.trim();
+            
+            if (!question) return;
             
             isProcessing = true;
             input.value = '';
-            input.style.height = 'auto';
             
-            const sendBtn = document.getElementById('send-btn');
-            if (sendBtn) {
-                sendBtn.disabled = true;
-            }
-            
+            // Lagre bruker-meldingen for senere memory saving
+            lastUserMessage = question;
+            console.log('💾 Stored user message for memory saving:', lastUserMessage.substring(0, 50) + '...');
+
             // Hide welcome message
             const welcomeMessage = document.getElementById('welcome-message');
             if (welcomeMessage) {
@@ -564,10 +607,15 @@
                 const data = await response.json();
                 console.log('✅ Stream response data:', data);
                 
-                currentSessionId = data.session_id;
+                // Only update session ID if we don't have one, or server explicitly gives us a new one
+                if (!currentSessionId || data.session_id !== currentSessionId) {
+                    currentSessionId = data.session_id;
+                    localStorage.setItem('standardgpt_session_id', currentSessionId);
+                    console.log('🆔 Updated session ID:', currentSessionId);
+                }
                 
                 // Start listening to SSE stream
-                startEventStream(data.session_id);
+                startEventStream(data.stream_session_id || data.session_id);  // Use stream_session_id if available
                 
             } catch (error) {
                 console.error('❌ Error sending message:', error);
@@ -619,7 +667,7 @@
                 console.log('✅ SSE connection opened');
             };
             
-            eventSource.onmessage = function(event) {
+            eventSource.onmessage = async function(event) {
                 hasReceivedData = true;
                 clearTimeout(connectionTimeout);
                 
@@ -640,20 +688,41 @@
                         
                         if (data.is_final) {
                             console.log('✅ Final token received');
+                            lastSystemResponse = currentAnswer; // Lagre system response
                             hideProgress();
-                            resetInput();
-                            loadConversations();
+                            
+                            // NYTT: Eksplisitt lagring av conversation memory
+                            if (lastUserMessage && lastSystemResponse) {
+                                console.log('💾 Final token: Saving conversation memory...');
+                                await saveConversationMemory(lastUserMessage, lastSystemResponse);
+                            }
+                            
+                            setTimeout(() => {
+                                resetInput();
+                                loadConversations();
+                            }, 500); // Redusert forsinkelse siden vi nå lagrer eksplisitt
                         }
                     } else if (data.type === 'final_answer') {
                         console.log('✅ Final answer received:', data.answer.substring(0, 100) + '...');
+                        lastSystemResponse = data.answer; // Lagre system response
+                        
                         if (!answerMessageElement) {
                             answerMessageElement = addMessageToChat('assistant', data.answer);
                         } else {
                             updateMessageContent(answerMessageElement, data.answer);
                         }
                         hideProgress();
-                        resetInput();
-                        loadConversations();
+                        
+                        // NYTT: Eksplisitt lagring av conversation memory
+                        if (lastUserMessage && lastSystemResponse) {
+                            console.log('💾 Final answer: Saving conversation memory...');
+                            await saveConversationMemory(lastUserMessage, lastSystemResponse);
+                        }
+                        
+                        setTimeout(() => {
+                            resetInput();
+                            loadConversations();
+                        }, 500); // Redusert forsinkelse siden vi nå lagrer eksplisitt
                     } else if (data.type === 'error') {
                         console.error('❌ SSE error received:', data.error);
                         hideProgress();
@@ -678,13 +747,75 @@
                 hideProgress();
                 
                 if (!hasReceivedData) {
-                    addMessageToChat('assistant', 'Kan ikke etablere tilkobling til serveren. Prøv igjen.');
+                    console.log('🔄 SSE failed, trying fallback to sync API...');
+                    
+                    // NYTT: Fallback til sync API hvis streaming feiler
+                    fallbackToSyncAPI(lastUserMessage);
                 } else {
                     addMessageToChat('assistant', 'Tilkoblingen ble avbrutt. Prøv å stille spørsmålet på nytt.');
                 }
                 
                 resetInput();
             };
+        }
+        
+        // NYTT: Fallback funksjon som bruker sync API
+        async function fallbackToSyncAPI(question) {
+            if (!question) {
+                addMessageToChat('assistant', 'Kan ikke etablere tilkobling til serveren. Prøv igjen.');
+                return;
+            }
+            
+            try {
+                console.log('🔄 Fallback: Using sync API for question:', question.substring(0, 50) + '...');
+                showProgress();
+                updateProgress('fallback', 'Bruker alternativ tilkobling...', '🔄', 50);
+                
+                const response = await fetch('/api/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': currentSessionId || 'default'
+                    },
+                    body: JSON.stringify({
+                        question: question,
+                        conversation_id: currentConversationId
+                    }),
+                    timeout: 30000  // 30 sekunder timeout
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Sync API returned ${response.status}`);
+                }
+                
+                const data = await response.json();
+                hideProgress();
+                
+                if (data.answer) {
+                    console.log('✅ Fallback: Received answer from sync API');
+                    lastSystemResponse = data.answer;
+                    addMessageToChat('assistant', data.answer);
+                    
+                    // Lagre conversation memory
+                    if (lastUserMessage && lastSystemResponse) {
+                        console.log('💾 Fallback: Saving conversation memory...');
+                        await saveConversationMemory(lastUserMessage, lastSystemResponse);
+                    }
+                    
+                    setTimeout(() => {
+                        resetInput();
+                        loadConversations();
+                    }, 500);
+                } else {
+                    throw new Error('No answer received from sync API');
+                }
+                
+            } catch (error) {
+                console.error('❌ Fallback sync API also failed:', error);
+                hideProgress();
+                addMessageToChat('assistant', 'Beklager, både streaming og alternativ tilkobling feilet. Prøv igjen senere.');
+                resetInput();
+            }
         }
         
         // Add message to chat
@@ -750,20 +881,12 @@
                 progressItems.appendChild(existingItem);
             }
             
-            // Mark as active
+            // Mark as active or completed based on progress
             document.querySelectorAll('.progress-item').forEach(item => {
                 item.classList.remove('active');
             });
-            existingItem.classList.add('active');
             
-            // Update content with spinner for active step
-            if (progress < 100) {
-                existingItem.innerHTML = `
-                    <span class="progress-emoji">${emoji}</span>
-                    <span class="progress-text">${message}</span>
-                    <div class="progress-spinner"></div>
-                `;
-            } else {
+            if (progress >= 100) {
                 // Mark as completed with checkmark
                 existingItem.classList.remove('active');
                 existingItem.classList.add('completed');
@@ -772,21 +895,34 @@
                     <span class="progress-text">${message}</span>
                     <div class="progress-checkmark">✓</div>
                 `;
-                
-                // Mark all previous steps as completed too
-                const allItems = document.querySelectorAll('.progress-item');
-                const currentIndex = Array.from(allItems).indexOf(existingItem);
-                
-                for (let i = 0; i < currentIndex; i++) {
-                    const item = allItems[i];
-                    if (!item.classList.contains('completed')) {
-                        item.classList.add('completed');
-                        const checkmarkHtml = item.innerHTML.replace(
-                            /<div class="progress-spinner"><\/div>|<span style="color: #22c55e;">✓<\/span>/,
-                            '<div class="progress-checkmark">✓</div>'
-                        );
-                        item.innerHTML = checkmarkHtml;
-                    }
+            } else {
+                // Mark as active with spinner
+                existingItem.classList.add('active');
+                existingItem.classList.remove('completed');
+                existingItem.innerHTML = `
+                    <span class="progress-emoji">${emoji}</span>
+                    <span class="progress-text">${message}</span>
+                    <div class="progress-spinner"></div>
+                `;
+            }
+            
+            // Mark all previous completed steps
+            const allItems = document.querySelectorAll('.progress-item');
+            const currentIndex = Array.from(allItems).indexOf(existingItem);
+            
+            for (let i = 0; i < currentIndex; i++) {
+                const item = allItems[i];
+                if (!item.classList.contains('completed')) {
+                    item.classList.add('completed');
+                    item.classList.remove('active');
+                    // Update HTML to show checkmark
+                    const emoji = item.querySelector('.progress-emoji').textContent;
+                    const text = item.querySelector('.progress-text').textContent;
+                    item.innerHTML = `
+                        <span class="progress-emoji">${emoji}</span>
+                        <span class="progress-text">${text}</span>
+                        <div class="progress-checkmark">✓</div>
+                    `;
                 }
             }
         }
@@ -922,6 +1058,38 @@
                 // Update current conversation
                 currentConversationId = conversationId;
                 
+                // FIKS: Når vi laster en eksisterende samtale, må vi gjenopprette conversation memory
+                // Vi bruker conversationId som base for å generere konsistent session_id for denne samtalen
+                const conversationSessionId = `conversation_${conversationId}`;
+                
+                // Hvis vi ikke har currentSessionId eller hvis vi bytter til annen samtale
+                if (!currentSessionId || !currentSessionId.includes(conversationId)) {
+                    currentSessionId = conversationSessionId;
+                    localStorage.setItem('standardgpt_session_id', currentSessionId);
+                    console.log('🆔 Loaded conversation: Set session ID to:', currentSessionId);
+                    
+                    // Gjenoppbygg conversation memory basert på loaded messages
+                    if (data.messages && data.messages.length > 0) {
+                        // Kall backend for å gjenoppbygge conversation memory
+                        try {
+                            await fetch('/api/session/rebuild', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-Session-ID': currentSessionId
+                                },
+                                body: JSON.stringify({
+                                    conversation_id: conversationId,
+                                    messages: data.messages
+                                })
+                            });
+                            console.log('✅ Conversation memory rebuilt for conversation:', conversationId);
+                        } catch (err) {
+                            console.warn('⚠️ Could not rebuild conversation memory:', err);
+                        }
+                    }
+                }
+                
                 // Update active conversation in sidebar
                 document.querySelectorAll('.conversation-item').forEach(item => {
                     item.classList.remove('active');
@@ -930,15 +1098,16 @@
                 // Find and activate the clicked conversation item
                 const conversationItems = document.querySelectorAll('.conversation-item');
                 conversationItems.forEach(item => {
-                    // Check if this item corresponds to the loaded conversation
-                    if (item.dataset && item.dataset.conversationId === conversationId) {
+                    if (item.dataset.conversationId === conversationId) {
                         item.classList.add('active');
                     }
                 });
                 
+                console.log('✅ Conversation loaded:', conversationId);
+                
             } catch (error) {
-                console.error('Error loading conversation:', error);
-                addMessageToChat('assistant', 'Kunne ikke laste samtalen. Prøv igjen.');
+                console.error('❌ Error loading conversation:', error);
+                alert('Kunne ikke laste samtale');
             }
         }
         
@@ -971,6 +1140,101 @@
             
             // Reset input
             resetInput();
+        }
+
+        // New conversation button handler  
+        function newConversation() {
+            // Clear existing chat
+            const messagesArea = document.getElementById('messages-area');
+            if (messagesArea) {
+                messagesArea.innerHTML = '';
+            }
+            
+            // Show welcome message
+            const welcomeMessage = document.getElementById('welcome-message');
+            if (welcomeMessage) {
+                welcomeMessage.classList.remove('hidden');
+            }
+            
+            // Reset conversation and session state for fresh start
+            currentConversationId = null;
+            
+            // FIKS: Bare generer ny session_id hvis vi ikke har en eller hvis vi eksplisitt ønsker å starte frisk
+            // For å bevare conversation memory i pågående session, behold existing session_id
+            if (!currentSessionId) {
+                currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+                localStorage.setItem('standardgpt_session_id', currentSessionId);
+                console.log('🆔 New conversation: Generated fresh session ID:', currentSessionId);
+            } else {
+                console.log('🆔 New conversation: Keeping existing session ID for memory continuity:', currentSessionId);
+            }
+            
+            // Remove active state from all conversations
+            document.querySelectorAll('.conversation-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            console.log('✅ New conversation started');
+        }
+        
+        // NYTT: Funksjon for å eksplisitt starte frisk session (med memory reset)
+        function startFreshSession() {
+            // Clear conversation memory backend
+            if (currentSessionId) {
+                fetch('/api/session/clear', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': currentSessionId
+                    }
+                }).catch(err => console.warn('Could not clear session:', err));
+            }
+            
+            // Generate completely new session ID
+            currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+            localStorage.setItem('standardgpt_session_id', currentSessionId);
+            console.log('🆔 Fresh session: Generated completely new session ID:', currentSessionId);
+            
+            // Clear UI and start new conversation
+            newConversation();
+        }
+
+        // NYTT: Funksjon for eksplisitt lagring av conversation memory
+        async function saveConversationMemory(userMessage, systemResponse) {
+            if (!userMessage || !systemResponse || !currentSessionId) {
+                console.warn('⚠️ Cannot save memory: missing data', {userMessage: !!userMessage, systemResponse: !!systemResponse, sessionId: !!currentSessionId});
+                return false;
+            }
+            
+            try {
+                console.log('💾 Saving conversation memory explicitly...');
+                console.log(`💾 User: ${userMessage.substring(0, 50)}...`);
+                console.log(`💾 System: ${systemResponse.substring(0, 50)}...`);
+                
+                const response = await fetch('/api/session/save-memory', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': currentSessionId
+                    },
+                    body: JSON.stringify({
+                        user_message: userMessage,
+                        system_response: systemResponse
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('✅ Conversation memory saved successfully:', data);
+                    return true;
+                } else {
+                    console.error('❌ Failed to save conversation memory:', response.status, await response.text());
+                    return false;
+                }
+            } catch (error) {
+                console.error('❌ Error saving conversation memory:', error);
+                return false;
+            }
         }
     </script>
 </body>

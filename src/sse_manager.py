@@ -160,26 +160,27 @@ def create_sse_response(session_id: str) -> Response:
         
         message_index = 0
         timeout_counter = 0
-        max_timeout = 120  # Redusert til 2 minutter
+        max_timeout = 120  # 2 minutter total timeout
         
         try:
             while session.is_active and timeout_counter < max_timeout:
                 # Cleanup expired sessions periodically
-                if timeout_counter % 30 == 0:  # Hver 30. sekund isteden for hver gang
+                if timeout_counter % 30 == 0:  # Hver 30. sekund
                     sse_manager.cleanup_expired_sessions()
                 
                 # Check for new messages
                 if message_index < len(session.messages):
-                    message = session.messages[message_index]
-                    yield f"data: {json.dumps(message['data'])}\n\n"
-                    message_index += 1
+                    while message_index < len(session.messages):
+                        message = session.messages[message_index]
+                        yield f"data: {json.dumps(message['data'])}\n\n"
+                        message_index += 1
                     timeout_counter = 0  # Reset timeout on activity
                 else:
-                    # Send keepalive every 30 seconds (isteden for 10)
+                    # Send keepalive every 30 seconds
                     if timeout_counter % 30 == 0 and timeout_counter > 0:
                         yield f"data: {json.dumps({'type': 'keepalive', 'timestamp': time.time()})}\n\n"
                     
-                    time.sleep(0.5)  # Redusert fra 1 sekund til 0.5 sekund
+                    time.sleep(0.5)  # Sjekk hver 0.5 sekund
                     timeout_counter += 0.5
                     
         except GeneratorExit:
@@ -199,7 +200,8 @@ def create_sse_response(session_id: str) -> Response:
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Cache-Control'
+            'Access-Control-Allow-Headers': 'Cache-Control',
+            'X-Accel-Buffering': 'no'  # Disable nginx buffering for real-time streaming
         }
     )
     
@@ -208,29 +210,38 @@ def create_sse_response(session_id: str) -> Response:
 def stream_query_processing(session_id: str, question: str, flow_manager, conversation_memory: str = "0"):
     """
     Stream query processing with progress updates
-    This runs in a separate thread
+    This runs in a separate thread with proper Flask context
     """
     import asyncio
+    from flask import current_app
     
-    try:
-        # Create new event loop for this thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Process query with SSE updates
-        result = loop.run_until_complete(
-            flow_manager.process_query_with_sse(
-                question, 
-                conversation_memory, 
-                session_id, 
-                debug=True
+    # FORBEDRET: Ensure proper Flask application context
+    with current_app.app_context():
+        try:
+            # Create new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            logger.info(f"Starting query processing for session {session_id}")
+            
+            # Process query with SSE updates
+            result = loop.run_until_complete(
+                flow_manager.process_query_with_sse(
+                    question, 
+                    conversation_memory, 
+                    session_id, 
+                    debug=True
+                )
             )
-        )
-        
-        logger.info(f"Query processing completed for session {session_id}")
-        
-    except Exception as e:
-        logger.error(f"Error in stream_query_processing: {e}")
-        sse_manager.send_error(session_id, f"Feil under behandling: {str(e)}")
-    finally:
-        loop.close() 
+            
+            logger.info(f"Query processing completed for session {session_id}")
+            
+        except Exception as e:
+            logger.error(f"Error in stream_query_processing: {e}", exc_info=True)
+            sse_manager.send_error(session_id, f"Feil under behandling: {str(e)}")
+        finally:
+            try:
+                loop.close()
+            except Exception as e:
+                logger.warning(f"Error closing event loop: {e}")
+            logger.info(f"Stream processing thread ended for session {session_id}") 

@@ -32,6 +32,7 @@ from config import get_config, HealthCheck, SecurityConfig
 # Import our custom Elasticsearch client and FlowManager
 from src.flow_manager import FlowManager
 import asyncio
+import threading
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -53,71 +54,86 @@ limiter = Limiter(
     storage_uri=app.config['RATELIMIT_STORAGE_URL']
 )
 
-# Simple in-memory cache for development
-cache = {}
-cache_expiry = {}
+# Global storage for conversation sessions - THREAD SAFE
+conversation_sessions: Dict[str, List[Dict[str, Any]]] = {}
+conversation_lock = threading.Lock()  # Add thread safety
 
-# Session storage for conversation memory
-conversation_sessions = {}
+# Cache storage
+cache: Dict[str, Any] = {}
+cache_expiry: Dict[str, datetime] = {}
 
-def get_session_id(request_obj) -> str:
-    """Generate or retrieve session ID from request headers"""
+def get_session_id(request_obj):
+    """Extract session ID from request headers or generate new one"""
     session_id = request_obj.headers.get('X-Session-ID')
     if not session_id:
         session_id = f"session_{int(time.time())}_{str(uuid.uuid4())[:8]}"
     return session_id
 
-def get_conversation_memory(session_id: str) -> str:
-    """Get formatted conversation memory for session"""
-    if session_id not in conversation_sessions or not conversation_sessions[session_id]:
-        return "0"
-    
-    history = conversation_sessions[session_id]
-    if not history:
-        return "0"
-    
-    # Format last 10 exchanges (20 messages total)
-    formatted_parts = []
-    for entry in history[-10:]:
-        # Clean and escape user/system messages for prompt safety
-        user_clean = entry['user'].replace('`', "'").replace('"', "'").replace('\n', ' ').replace('\r', ' ')
-        system_clean = entry['system'].replace('`', "'").replace('"', "'").replace('\n', ' ').replace('\r', ' ')
+def get_conversation_memory(session_id):
+    """Get formatted conversation memory for session - THREAD SAFE"""
+    with conversation_lock:
+        if session_id not in conversation_sessions or not conversation_sessions[session_id]:
+            app.logger.debug(f"🧠 No conversation memory for session {session_id}")
+            return "0"
         
-        formatted_parts.append(f"Bruker: `{user_clean}`")
-        formatted_parts.append(f"System: `{system_clean}`")
-    
-    return "; ".join(formatted_parts) + ";"
+        history = conversation_sessions[session_id]
+        if not history:
+            app.logger.debug(f"🧠 Empty conversation history for session {session_id}")
+            return "0"
+        
+        # Format last 5 exchanges (to keep within token limits)
+        formatted_parts = []
+        for entry in history[-5:]:
+            # Clean messages for prompt safety but keep them readable
+            user_clean = entry['user'].replace('\n', ' ').replace('\r', ' ').strip()
+            system_clean = entry['system'].replace('\n', ' ').replace('\r', ' ').strip()
+            
+            # Use the format expected by analysis prompt: USER: ...\nSYSTEM: ...
+            formatted_parts.append(f"USER: {user_clean}")
+            formatted_parts.append(f"SYSTEM: {system_clean}")
+        
+        # Join with newlines as expected by the analysis prompt
+        memory_text = "\n".join(formatted_parts)
+        app.logger.debug(f"🧠 Retrieved conversation memory for session {session_id}: {len(memory_text)} chars, {len(history)} exchanges")
+        app.logger.debug(f"🧠 Memory format preview: {memory_text[:200]}...")
+        return memory_text
 
-def update_conversation_memory(session_id: str, user_message: str, system_response: str):
-    """Update conversation memory with new exchange"""
-    if session_id not in conversation_sessions:
-        conversation_sessions[session_id] = []
-    
-    # Clean messages before storing
-    user_clean = user_message.strip()
-    system_clean = system_response.strip()[:400]  # Shorter limit to prevent token issues
-    
-    # Add new exchange
-    conversation_sessions[session_id].append({
-        'user': user_clean,
-        'system': system_clean,
-        'timestamp': datetime.utcnow().isoformat()
-    })
-    
-    # Keep only last 10 exchanges
-    if len(conversation_sessions[session_id]) > 10:
-        conversation_sessions[session_id] = conversation_sessions[session_id][-10:]
+def update_conversation_memory(session_id, user_message, system_response):
+    """Update conversation memory with new exchange - THREAD SAFE"""
+    with conversation_lock:
+        if session_id not in conversation_sessions:
+            conversation_sessions[session_id] = []
+            app.logger.debug(f"🧠 Created new conversation session: {session_id}")
+        
+        # Clean messages before storing - keep more of system response for context
+        user_clean = user_message.strip()
+        system_clean = system_response.strip()[:1000]  # Increased from 400 to 1000 for better context
+        
+        # Add new exchange
+        conversation_sessions[session_id].append({
+            'user': user_clean,
+            'system': system_clean,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        
+        # Keep only last 5 exchanges to prevent token overflow
+        if len(conversation_sessions[session_id]) > 5:
+            conversation_sessions[session_id] = conversation_sessions[session_id][-5:]
+        
+        app.logger.debug(f"🧠 Updated conversation memory for session {session_id}: {len(conversation_sessions[session_id])} exchanges")
+        app.logger.debug(f"🧠 Latest exchange - User: {user_clean[:50]}... System: {system_clean[:100]}...")
 
-def clear_conversation_memory(session_id: str):
-    """Clear conversation memory for session"""
-    if session_id in conversation_sessions:
-        del conversation_sessions[session_id]
+def clear_conversation_memory(session_id):
+    """Clear conversation memory for session - THREAD SAFE"""
+    with conversation_lock:
+        if session_id in conversation_sessions:
+            del conversation_sessions[session_id]
 
-def cache_key(text: str) -> str:
+def cache_key(text):
     """Generate cache key from text"""
     return hashlib.md5(text.encode()).hexdigest()
 
-def get_from_cache(key: str) -> Optional[Any]:
+def get_from_cache(key):
     """Get value from cache if not expired"""
     if key in cache and key in cache_expiry:
         if datetime.now() < cache_expiry[key]:
@@ -128,12 +144,12 @@ def get_from_cache(key: str) -> Optional[Any]:
             del cache_expiry[key]
     return None
 
-def set_cache(key: str, value: Any, ttl_seconds: int = 3600):
+def set_cache(key, value, ttl_seconds=3600):
     """Set value in cache with TTL"""
     cache[key] = value
     cache_expiry[key] = datetime.now() + timedelta(seconds=ttl_seconds)
 
-def cache_response(ttl_seconds: int = 3600):
+def cache_response(ttl_seconds=3600):
     """Decorator for caching responses"""
     def decorator(func):
         @wraps(func)
@@ -208,7 +224,6 @@ if flow_manager:
             app.logger.warning(f"⚠️ Background warmup failed: {e}")
     
     # Start warmup in background thread
-    import threading
     warmup_thread = threading.Thread(target=run_warmup, daemon=True)
     warmup_thread.start()
     app.logger.info("🚀 Background warmup started")
@@ -591,106 +606,163 @@ def api_query_stream():
             app.logger.error(f"❌ STREAM API: Failed to create SSE session: {e}")
             return jsonify({'error': f'Failed to create session: {e}'}), 500
         
-        # Get conversation memory
-        conversation_memory = get_conversation_memory(get_session_id(request))
+        # Get conversation memory using frontend session ID, not the new stream session
+        frontend_session_id = get_session_id(request)
+        conversation_memory = get_conversation_memory(frontend_session_id)
+        app.logger.info(f"🧠 STREAM API: Using frontend session ID for memory: {frontend_session_id}")
         app.logger.info(f"🧠 STREAM API: Conversation memory length: {len(conversation_memory)}")
         
         # Start async processing i bakgrunnen med threading
         def process_async():
             app.logger.info(f"🔄 ASYNC: Starting processing for session {session_id}")
+            app.logger.info(f"🔄 ASYNC: Frontend session ID: {frontend_session_id}")
+            app.logger.info(f"🔄 ASYNC: Question: {query_req.question}")
             start_processing_time = time.time()
             
             try:
-                if flow_manager:
-                    # Opprett ny event loop for denne tråden
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+                # FORBEDRET: Ensure proper Flask app context is available in thread
+                with app.app_context():
+                    app.logger.info(f"🔄 ASYNC: Inside Flask app context for session {session_id}")
                     
-                    app.logger.info(f"🔄 ASYNC: Created event loop for session {session_id}")
-                    
-                    # Sett timeout for hele prosessen (maksimum 30 sekunder)
-                    try:
-                        result = asyncio.wait_for(
-                            flow_manager.process_query_with_sse(
-                                query_req.question, 
-                                conversation_memory, 
-                                session_id, 
-                                debug_enabled
-                            ),
-                            timeout=30.0  # 30 sekunder timeout
-                        )
-                        result = loop.run_until_complete(result)
-                    except asyncio.TimeoutError:
-                        app.logger.error(f"⏰ ASYNC: Processing timeout for session {session_id}")
-                        sse_manager.send_error(session_id, "Prosesseringen tok for lang tid. Prøv med et enklere spørsmål.")
-                        return
-                    
-                    processing_time = time.time() - start_processing_time
-                    app.logger.info(f"✅ ASYNC: Processing completed for session {session_id} in {processing_time:.2f}s")
-                    
-                    # Lagre samtale hvis suksessfull
-                    if not result.get('error') and result.get('answer'):
+                    if flow_manager:
+                        app.logger.info(f"🔄 ASYNC: FlowManager available for session {session_id}")
+                        
+                        # Opprett ny event loop for denne tråden
+                        import asyncio
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        
+                        app.logger.info(f"🔄 ASYNC: Created event loop for session {session_id}")
+                        
+                        # Sett timeout for hele prosessen (maksimum 25 sekunder for bedre ytelse)
                         try:
-                            from src.session_manager import session_manager
-                            conversation_id = data.get('conversation_id')
-                            if conversation_id:
-                                session_manager.add_message_to_conversation(
-                                    conversation_id, query_req.question, result['answer']
-                                )
-                                app.logger.info(f"✅ ASYNC: Added message to existing conversation {conversation_id}")
-                            else:
-                                # Opprett ny samtale
-                                new_conversation_id = session_manager.create_conversation(
-                                    query_req.question, result['answer']
-                                )
-                                result['conversation_id'] = new_conversation_id
-                                app.logger.info(f"✅ ASYNC: Created new conversation {new_conversation_id}")
+                            app.logger.info(f"🔄 ASYNC: Starting flow_manager.process_query_with_sse for session {session_id}")
                             
-                            # Oppdater conversation memory
-                            update_conversation_memory(
-                                get_session_id(request), 
-                                query_req.question, 
-                                result['answer']
+                            result = asyncio.wait_for(
+                                flow_manager.process_query_with_sse(
+                                    query_req.question, 
+                                    conversation_memory, 
+                                    session_id, 
+                                    debug_enabled
+                                ),
+                                timeout=25.0  # Redusert til 25 sekunder for bedre ytelse
                             )
-                            app.logger.info(f"✅ ASYNC: Updated conversation memory")
+                            result = loop.run_until_complete(result)
                             
-                        except Exception as e:
-                            app.logger.error(f"⚠️ ASYNC: Failed to save conversation: {e}")
-                    
-                    loop.close()
-                    app.logger.info(f"✅ ASYNC: Event loop closed for session {session_id}")
-                    
-                else:
-                    app.logger.error(f"❌ ASYNC: FlowManager not available for session {session_id}")
-                    sse_manager.send_error(session_id, "FlowManager ikke initialisert")
-                    
+                            app.logger.info(f"✅ ASYNC: Process completed successfully for session {session_id}")
+                            app.logger.info(f"✅ ASYNC: Result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+                            app.logger.info(f"✅ ASYNC: Answer length: {len(result.get('answer', '')) if isinstance(result, dict) else 'N/A'}")
+                            
+                        except asyncio.TimeoutError:
+                            error_msg = "Prosesseringen tok for lang tid. Prøv med et enklere spørsmål."
+                            app.logger.error(f"⏰ ASYNC: Processing timeout for session {session_id}")
+                            sse_manager.send_error(session_id, error_msg)
+                            return
+                        except Exception as processing_error:
+                            error_msg = f"Feil under behandling: {str(processing_error)}"
+                            app.logger.error(f"❌ ASYNC: Processing error for session {session_id}: {processing_error}")
+                            app.logger.error(f"❌ ASYNC: Processing error traceback:")
+                            import traceback
+                            app.logger.error(traceback.format_exc())
+                            sse_manager.send_error(session_id, error_msg)
+                            return
+                        finally:
+                            try:
+                                loop.close()
+                                app.logger.info(f"🔄 ASYNC: Event loop closed for session {session_id}")
+                            except Exception as loop_error:
+                                app.logger.warning(f"⚠️ ASYNC: Error closing loop for session {session_id}: {loop_error}")
+                        
+                        processing_time = time.time() - start_processing_time
+                        app.logger.info(f"✅ ASYNC: Processing completed for session {session_id} in {processing_time:.2f}s")
+                        
+                        # FORBEDRET: Simplified memory saving logic
+                        has_valid_question = query_req and query_req.question and len(query_req.question.strip()) > 0
+                        has_some_answer = result.get('answer') and len(result.get('answer', '').strip()) > 0
+                        
+                        should_save_memory = has_valid_question and has_some_answer
+                        
+                        app.logger.info(f"🧠 ASYNC: Memory decision - Valid question: {has_valid_question}, Has answer: {has_some_answer}, Should save: {should_save_memory}")
+                        app.logger.info(f"🧠 ASYNC: Question: '{query_req.question[:50]}...'")
+                        app.logger.info(f"🧠 ASYNC: Answer preview: '{str(result.get('answer', ''))[:100]}...'")
+                        
+                        if should_save_memory:
+                            try:
+                                app.logger.info(f"🧠 ASYNC: Starting conversation saving for session {session_id}")
+                                
+                                # Lagre til session manager bare hvis suksessfull (ikke ved tekniske feil)
+                                if not result.get('error'):
+                                    from src.session_manager import session_manager
+                                    conversation_id = data.get('conversation_id') if data else None
+                                    if conversation_id:
+                                        session_manager.add_message_to_conversation(
+                                            conversation_id, query_req.question, result['answer']
+                                        )
+                                        app.logger.info(f"✅ ASYNC: Added message to existing conversation {conversation_id}")
+                                    else:
+                                        # Opprett ny samtale
+                                        new_conversation_id = session_manager.create_conversation(
+                                            query_req.question, result['answer']
+                                        )
+                                        result['conversation_id'] = new_conversation_id
+                                        app.logger.info(f"✅ ASYNC: Created new conversation {new_conversation_id}")
+                                
+                                # VIKTIG: Oppdater conversation memory - dette skjer nå også i frontend
+                                app.logger.info(f"🧠 ASYNC: Updating conversation memory for frontend session {frontend_session_id}")
+                                app.logger.info(f"🧠 ASYNC: Memory before update: {len(get_conversation_memory(frontend_session_id))} chars")
+                                
+                                update_conversation_memory(
+                                    frontend_session_id, 
+                                    query_req.question, 
+                                    result['answer']
+                                )
+                                
+                                memory_after = get_conversation_memory(frontend_session_id)
+                                app.logger.info(f"✅ ASYNC: Updated conversation memory for session {frontend_session_id}")
+                                app.logger.info(f"✅ ASYNC: Memory after update: {len(memory_after)} chars")
+                                app.logger.info(f"✅ ASYNC: Memory preview: '{memory_after[:100]}...'")
+                                
+                            except Exception as save_error:
+                                app.logger.error(f"⚠️ ASYNC: Failed to save conversation: {save_error}")
+                                import traceback
+                                app.logger.error(f"⚠️ ASYNC: Save error traceback: {traceback.format_exc()}")
+                        else:
+                            app.logger.warning(f"⚠️ ASYNC: Skipping memory save for session {session_id}")
+                            app.logger.warning(f"⚠️ ASYNC: Reason - has_valid_question: {has_valid_question}, has_some_answer: {has_some_answer}")
+                        
+                    else:
+                        app.logger.error(f"❌ ASYNC: FlowManager not available for session {session_id}")
+                        sse_manager.send_error(session_id, "FlowManager ikke initialisert")
+                        
             except Exception as e:
-                app.logger.error(f"❌ ASYNC: Error processing session {session_id}: {e}")
-                sse_manager.send_error(session_id, f"Feil under behandling: {str(e)}")
+                app.logger.error(f"❌ ASYNC: Unexpected error for session {session_id}: {e}")
+                import traceback
+                app.logger.error(f"❌ ASYNC: Full traceback: {traceback.format_exc()}")
+                sse_manager.send_error(session_id, f"Uventet feil: {str(e)}")
             finally:
-                # Ensure session cleanup after processing
-                try:
-                    if 'loop' in locals():
-                        loop.close()
-                except:
-                    pass
+                app.logger.info(f"🏁 ASYNC: Thread completed for session {session_id}")
         
-        # Start processing i bakgrunnstråd
+        # Start processing i bakgrunnstråd med daemon=False for robusthet
         import threading
-        processing_thread = threading.Thread(target=process_async, daemon=True)
+        processing_thread = threading.Thread(
+            target=process_async, 
+            daemon=False,  # Ikke daemon for å sikre fullføring
+            name=f"ProcessingThread-{session_id}"
+        )
         processing_thread.start()
         app.logger.info(f"🚀 STREAM API: Started background processing thread for session {session_id}")
         
-        # Returner session info
+        # FIXED: Return frontend session_id for conversation memory continuity
         response_data = {
-            'session_id': session_id,
+            'session_id': frontend_session_id,  # Return frontend session_id instead of stream session_id
+            'stream_session_id': session_id,    # Keep stream session for SSE functionality
             'stream_url': f'/api/stream/{session_id}',
             'status': 'started',
             'debug': debug_enabled
         }
         
         app.logger.info(f"✅ STREAM API: Returning response: {response_data}")
+        app.logger.info(f"🔑 STREAM API: Frontend session_id: {frontend_session_id}, Stream session_id: {session_id}")
         return jsonify(response_data)
         
     except Exception as e:
@@ -782,6 +854,45 @@ def create_new_conversation():
     except Exception as e:
         app.logger.error(f"Create conversation error: {e}")
         return jsonify({'error': 'Could not create conversation'}), 500
+
+@app.route('/api/session/save-memory', methods=['POST'])
+def save_conversation_memory():
+    """
+    Eksplisitt lagring av konversasjonsminne fra frontend
+    Dette sikrer at minnet blir lagret selv når streaming feiler
+    """
+    try:
+        data = request.get_json()
+        session_id = get_session_id(request)
+        
+        if not data or 'user_message' not in data or 'system_response' not in data:
+            return jsonify({'error': 'Missing required fields: user_message, system_response'}), 400
+        
+        user_message = data['user_message'].strip()
+        system_response = data['system_response'].strip()
+        
+        if not user_message or not system_response:
+            return jsonify({'error': 'Both user_message and system_response must be non-empty'}), 400
+        
+        # Lagre conversation memory
+        update_conversation_memory(session_id, user_message, system_response)
+        
+        # Hent oppdatert memory for bekreftelse
+        memory = get_conversation_memory(session_id)
+        
+        app.logger.info(f"✅ MANUAL SAVE: Conversation memory saved for session {session_id}")
+        app.logger.info(f"✅ MANUAL SAVE: Memory length: {len(memory)} chars")
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'memory_length': len(memory),
+            'message': 'Conversation memory saved successfully'
+        })
+        
+    except Exception as e:
+        app.logger.error(f"❌ MANUAL SAVE: Failed to save conversation memory: {e}")
+        return jsonify({'error': f'Failed to save memory: {str(e)}'}), 500
 
 @app.errorhandler(404)
 def not_found(error):

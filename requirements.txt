@@ -5,9 +5,9 @@ Werkzeug==3.0.1
 # Production WSGI server
 gunicorn==21.2.0
 
-# HTTP requests and API
-requests==2.31.0
-urllib3==2.1.0
+# FastAPI for local embedding service
+fastapi==0.104.1
+uvicorn==0.24.0
 
 # Data validation and serialization
 pydantic==2.10.6
@@ -15,8 +15,12 @@ pydantic==2.10.6
 # ElasticSearch client
 elasticsearch==8.11.0
 
-# OpenAI client
+# OpenAI client (for both main app and embedding service)
 openai==1.51.2
+
+# HTTP requests and API
+requests==2.31.0
+urllib3==2.1.0
 
 # Rate limiting
 Flask-Limiter==3.5.0
