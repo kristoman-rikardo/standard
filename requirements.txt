@@ -18,6 +18,11 @@ elasticsearch==8.11.0
 # OpenAI client (for both main app and embedding service)
 openai==1.51.2
 
+# LangChain for prompt management
+langchain==0.1.0
+langchain-core==0.1.14
+langchain-openai==0.0.5
+
 # HTTP requests and API
 requests==2.31.0
 urllib3==2.1.0
