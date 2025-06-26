@@ -501,10 +501,7 @@
                 <div class="messages-area" id="messages-area">
                     <div class="welcome-message" id="welcome-message">
                         <div class="welcome-title">Hei, hva kan jeg hjelpe deg med?</div>
-                        <div class="welcome-subtitle">
-                            <p>StandardGPT hjelper deg med å finne informasjon om norske standarder.</p>
-                            <p> Spør om en eller flere konkrete standarder eller la meg hjelpe deg med å finne en standard.</p>
-                        </div>
+                        <div class="welcome-subtitle">Spør om norske standarder og jeg vil hjelpe deg med å finne informasjonen du trenger.</div>
                     </div>
                 </div>
                 
@@ -577,26 +574,6 @@
                 const hasText = this.value.trim().length > 0;
                 sendBtn.disabled = !hasText || isProcessing;
             });
-        }        
-        // NYTT: Rydd meldinger men bevar welcome-message elementet
-        function clearMessagesButKeepWelcome() {
-            const messagesArea = document.getElementById('messages-area');
-            if (!messagesArea) return;
-            
-            // Finn alle child elements bortsett fra welcome-message
-            const messagesToRemove = [];
-            for (let child of messagesArea.children) {
-                if (child.id !== 'welcome-message') {
-                    messagesToRemove.push(child);
-                }
-            }
-            
-            // Fjern alle meldinger bortsett fra welcome-message
-            messagesToRemove.forEach(element => {
-                element.remove();
-            });
-            
-            console.log('🧹 Cleared messages but kept welcome message');
         }
         
         // Auto resize textarea
@@ -1166,7 +1143,7 @@
                 // Clear current chat
                 const messagesArea = document.getElementById('messages-area');
                 if (messagesArea) {
-                    clearMessagesButKeepWelcome();
+                    messagesArea.innerHTML = '';
                 }
                 
                 const welcomeMessage = document.getElementById('welcome-message');
@@ -1185,40 +1162,35 @@
                 // Update current conversation
                 currentConversationId = conversationId;
                 
-                // VIKTIG: Generer unik per-conversation session ID for memory isolasjon
-                const conversationSessionId = `conversation_${conversationId}_${Date.now()}`;
+                // FIKS: Når vi laster en eksisterende samtale, må vi gjenopprette conversation memory
+                // Vi bruker conversationId som base for å generere konsistent session_id for denne samtalen
+                const conversationSessionId = `conversation_${conversationId}`;
                 
-                // Alltid sett ny session ID for denne spesifikke samtalen
-                currentSessionId = conversationSessionId;
-                localStorage.setItem('standardgpt_session_id', currentSessionId);
-                console.log('🆔 Loaded conversation: Set unique session ID:', currentSessionId);
-                
-                // VIKTIG: Gjenoppbygg conversation memory for denne spesifikke samtalen
-                if (data.messages && data.messages.length > 0) {
-                    try {
-                        console.log('🔄 Rebuilding conversation memory for:', conversationId);
-                        
-                        const rebuildResponse = await fetch('/api/session/rebuild', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-Session-ID': currentSessionId
-                            },
-                            body: JSON.stringify({
-                                conversation_id: conversationId,
-                                messages: data.messages
-                            })
-                        });
-                        
-                        if (rebuildResponse.ok) {
-                            const rebuildData = await rebuildResponse.json();
-                            console.log('✅ Conversation memory rebuilt successfully:', rebuildData);
-                        } else {
-                            console.warn('⚠️ Could not rebuild conversation memory:', rebuildResponse.status);
+                // Hvis vi ikke har currentSessionId eller hvis vi bytter til annen samtale
+                if (!currentSessionId || !currentSessionId.includes(conversationId)) {
+                    currentSessionId = conversationSessionId;
+                    localStorage.setItem('standardgpt_session_id', currentSessionId);
+                    console.log('🆔 Loaded conversation: Set session ID to:', currentSessionId);
+                    
+                    // Gjenoppbygg conversation memory basert på loaded messages
+                    if (data.messages && data.messages.length > 0) {
+                        // Kall backend for å gjenoppbygge conversation memory
+                        try {
+                            await fetch('/api/session/rebuild', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-Session-ID': currentSessionId
+                                },
+                                body: JSON.stringify({
+                                    conversation_id: conversationId,
+                                    messages: data.messages
+                                })
+                            });
+                            console.log('✅ Conversation memory rebuilt for conversation:', conversationId);
+                        } catch (err) {
+                            console.warn('⚠️ Could not rebuild conversation memory:', err);
                         }
-                        
-                    } catch (err) {
-                        console.warn('⚠️ Error rebuilding conversation memory:', err);
                     }
                 }
                 
@@ -1248,7 +1220,7 @@
             // Clear current chat
             const messagesArea = document.getElementById('messages-area');
             if (messagesArea) {
-                clearMessagesButKeepWelcome();
+                messagesArea.innerHTML = '';
             }
             
             const welcomeMessage = document.getElementById('welcome-message');
@@ -1274,14 +1246,12 @@
             resetInput();
         }
 
-        // New conversation button handler - FORBEDRET SESSION MANAGEMENT
+        // New conversation button handler  
         function newConversation() {
-            console.log('🔄 Starting NEW conversation...');
-            
             // Clear existing chat
             const messagesArea = document.getElementById('messages-area');
             if (messagesArea) {
-                clearMessagesButKeepWelcome();
+                messagesArea.innerHTML = '';
             }
             
             // Show welcome message
@@ -1290,48 +1260,25 @@
                 welcomeMessage.classList.remove('hidden');
             }
             
-            // Reset conversation state
+            // Reset conversation and session state for fresh start
             currentConversationId = null;
             
-            // VIKTIG: Generer HELT NY session_id for å skille fra forrige memory
-            currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
-            localStorage.setItem('standardgpt_session_id', currentSessionId);
-            console.log('🆔 NEW conversation: Generated fresh session ID:', currentSessionId);
-            
-            // VIKTIG: Explicit clear av conversation memory på backend
-            clearConversationMemoryExplicit();
+            // FIKS: Bare generer ny session_id hvis vi ikke har en eller hvis vi eksplisitt ønsker å starte frisk
+            // For å bevare conversation memory i pågående session, behold existing session_id
+            if (!currentSessionId) {
+                currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+                localStorage.setItem('standardgpt_session_id', currentSessionId);
+                console.log('🆔 New conversation: Generated fresh session ID:', currentSessionId);
+            } else {
+                console.log('🆔 New conversation: Keeping existing session ID for memory continuity:', currentSessionId);
+            }
             
             // Remove active state from all conversations
             document.querySelectorAll('.conversation-item').forEach(item => {
                 item.classList.remove('active');
             });
             
-            console.log('✅ New conversation started with clean memory');
-        }
-        
-        // NYTT: Explicit clear av conversation memory på backend
-        async function clearConversationMemoryExplicit() {
-            if (!currentSessionId) return;
-            
-            try {
-                console.log('🧹 Clearing conversation memory explicitly for session:', currentSessionId);
-                
-                const response = await fetch('/api/session/clear', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Session-ID': currentSessionId
-                    }
-                });
-                
-                if (response.ok) {
-                    console.log('✅ Conversation memory cleared successfully');
-                } else {
-                    console.warn('⚠️ Could not clear conversation memory:', response.status);
-                }
-            } catch (error) {
-                console.warn('⚠️ Error clearing conversation memory:', error);
-            }
+            console.log('✅ New conversation started');
         }
         
         // NYTT: Funksjon for eksplisitt lagring av conversation memory

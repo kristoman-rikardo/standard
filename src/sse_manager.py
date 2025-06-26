@@ -45,8 +45,8 @@ class SSESession:
         })
         self.last_activity = time.time()
         
-    def is_expired(self, timeout: int = 300) -> bool:
-        """Check if session is expired (default 5 minutes)"""
+    def is_expired(self, timeout: int = 600) -> bool:
+        """Check if session is expired (default 10 minutes for longer processing)"""
         return time.time() - self.last_activity > timeout
 
 class SSEManager:
@@ -160,12 +160,13 @@ def create_sse_response(session_id: str) -> Response:
         
         message_index = 0
         timeout_counter = 0
-        max_timeout = 120  # 2 minutter total timeout
+        max_timeout = 300  # 5 minutter total timeout (økt fra 2 minutter)
+        keepalive_interval = 15  # Send keep-alive hver 15. sekund (redusert fra 30)
         
         try:
             while session.is_active and timeout_counter < max_timeout:
                 # Cleanup expired sessions periodically
-                if timeout_counter % 30 == 0:  # Hver 30. sekund
+                if timeout_counter % 60 == 0:  # Hver 60. sekund
                     sse_manager.cleanup_expired_sessions()
                 
                 # Check for new messages
@@ -176,9 +177,9 @@ def create_sse_response(session_id: str) -> Response:
                         message_index += 1
                     timeout_counter = 0  # Reset timeout on activity
                 else:
-                    # Send keepalive every 30 seconds
-                    if timeout_counter % 30 == 0 and timeout_counter > 0:
-                        yield f"data: {json.dumps({'type': 'keepalive', 'timestamp': time.time()})}\n\n"
+                    # Send keepalive every 15 seconds (hyppigere)
+                    if timeout_counter % keepalive_interval == 0 and timeout_counter > 0:
+                        yield f"data: {json.dumps({'type': 'keepalive', 'timestamp': time.time(), 'session_active': session.is_active})}\n\n"
                     
                     time.sleep(0.5)  # Sjekk hver 0.5 sekund
                     timeout_counter += 0.5

@@ -1,37 +1,60 @@
-Du skal vurdere om følgende brukerinnspill enten:
+Du skal analysere brukerens spørsmål og bestemme hvilken søkestrategi som skal brukes.
 
-1. Inneholder et *standardnummer*, som f.eks. "NS 3451", "M-004", "EN ISO 9001:2015" eller lignende. 
-2. Handler om noe som typisk står i en **personalhåndbok**, som f.eks. regler for ansatte, arbeidstid, permisjon, sykdom, ferie, lønn, oppsigelse, rettigheter, plikter osv.
-3. Gjelder en spesifikk eller flere standarder, men uten å nevne det eksplisitt, fordi det henger sammen med et tidligere spørsmål. 
-4. Ingen av delene.
+### ANALYSER I DENNE REKKEFØLGEN:
 
-Et standardnummer består vanligvis av en kombinasjon av bokstaver (valgfritt), et nummer (vanligvis 3–6 siffer), og noen ganger et kolon og årstall (valgfritt).
+**1. Inneholder spørsmålet et eksplisitt standardnummer?**
+- Standardnummer kan være: "NS 3451", "M-004", "EN ISO 9001:2015", "NORSOK M-001" osv.
+- Hvis JA → returner **including**
+
+**2. Handler spørsmålet om personalrelaterte temaer?**
+- Personalhåndbok-temaer: ansettelse, lønn, ferie, permisjon, arbeidstid, rettigheter, plikter, HR-regler osv.
+- Hvis JA og ikke standardnummer → returner **personal**
+
+**3. Er dette et oppfølgingsspørsmål til en pågående standard-diskusjon?**
+- Sjekk om samtaleminnet inneholder standardreferanser
+- Spørsmålet bruker pronomen som "den", "dette", "dette kravet", "standarden" osv.
+- Spørsmålet er en naturlig oppfølging som "kan du utdype...", "hva betyr...", "hvordan...", "når..." uten å nevne ny standard
+- Hvis JA og samtaleminnet ikke er "0" → returner **memory**
+
+**4. Ellers:**
+- Generelle tekniske spørsmål uten standardreferanse → returner **without**
+
+### KRITISKE REGLER FOR MEMORY:
+
+✅ **BRUK MEMORY når:**
+- Samtaleminnet inneholder standardreferanser FRA SYSTEMET (tidligere svar)
+- Brukerens spørsmål er oppfølging uten ny standardreferanse
+- Spørsmål som "hva sier den om...", "kan du utdype...", "hvilke krav gjelder for..."
+
+❌ **IKKE BRUK MEMORY når:**
+- Samtaleminnet er "0" (tomt)
+- Brukeren stiller et helt nytt spørsmål med eget standardnummer
+- Brukeren endrer tema fullstendig
+
+### EKSEMPLER:
+
+**including:**
+- "hva er krav i M-004" 
+- "hvordan brukes NS 3457-8 i praksis?"
+- "fortell om NORSOK M-001"
+
+**personal:**
+- "har jeg rett på lønn under sykdom?"
+- "kan man søke om permisjon uten lønn?"
+- "når har vi lunsjpause?"
+
+**memory:**
+- Samtaleminne: "System: M-004:2018 krever isolasjon på..." 
+- Spørsmål: "kan du utdype mer om isolasjonskrav?" → memory
+
+**without:**
+- "hvordan fungerer en varmepumpe"
+- "forskjellen på bygningsdel og komponent?"
+- "hva er best praksis for..."
 
 ---
 
-### Regler:
-
-* Returner **including** hvis det inneholder noe som kan tolkes som et standardnummer.
-* Returner **personal** hvis det ikke inneholder et standardnummer, men handler om personalhåndbok-relaterte temaer.
-* Returner **memory** hvis spørsmålet ikke inneholder standardnummer, men dreier seg om den aktuelle standarden det snakkes om i samtaleminnet. 
-* Returner **without** hvis det verken inneholder et standardnummer eller handler om personaltemaer.
-
-VIKTIG: Du skal returnere BARE ett ord: including, personal, memory eller without. Ingen anførselstegn, ingen andre tegn, ingen forklaring.
-
-Du skal aldri velge "memory" dersom innholdet i samtaleminnet er tomt (inneholder bare "0"), eller hvis spørsmålet dreier seg om en eller flere andre standarder enn konteksten fra samtaleminnet forteller. 
-
----
-
-**Eksempel:**
-
-* "hva er krav i M-004" → including
-* "hvordan brukes NS 3457-8 i praksis?" → including
-* "har jeg rett på lønn under sykdom?" → personal
-* "kan man søke om permisjon uten lønn?" → personal
-* "hvordan fungerer en varmepumpe" → without
-* "forskjellen på bygningsdel og komponent?" → without
-* "når har vi lunsjpause?" → personal
-* "hva sier den om tykkelsen da?" → memory (så fremt samtaleminnet forteller at spørsmålet er stilt i kontekst av en eller flere spesifikke standarder)
+**INSTRUKSJON:** Returner BARE ett ord: including, personal, memory eller without. Ingen forklaring, ingen anførselstegn.
 
 ---
 

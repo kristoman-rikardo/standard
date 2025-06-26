@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversation Memory Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: #2563eb;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .test-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .memory-status {
+            background: #f3f4f6;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        
+        .memory-status.has-memory {
+            border-color: #10b981;
+            background: #ecfdf5;
+        }
+        
+        .test-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        
+        .test-button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        
+        .test-button:hover {
+            background: #1d4ed8;
+        }
+        
+        .test-button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        
+        .message {
+            background: #f9fafb;
+            border-left: 4px solid #2563eb;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .message.assistant {
+            border-left-color: #10b981;
+            background: #ecfdf5;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        
+        .status.success {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+        
+        .status.error {
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+        }
+        
+        .status.info {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+        }
+        
+        .step-guide {
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .step {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 6px;
+            border-left: 4px solid #f59e0b;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #e5e7eb;
+            border-radius: 50%;
+            border-top-color: #2563eb;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧠 Conversation Memory Test</h1>
+        <p>Denne siden tester at StandardGPT husker kontekst mellom spørsmål</p>
+    </div>
+
+    <div class="test-section">
+        <h2>Session Info</h2>
+        <div><strong>Session ID:</strong> <span id="session-id">Genereres...</span></div>
+        <div><strong>Status:</strong> <span id="connection-status">Kobler til...</span></div>
+        
+        <h3>Conversation Memory Status:</h3>
+        <div class="memory-status" id="memory-display">Ingen memory ennå...</div>
+        
+        <button class="test-button" onclick="refreshMemory()">🔄 Oppdater Memory</button>
+        <button class="test-button" onclick="clearMemory()">🗑️ Rydde Memory</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Automatisk Test (Anbefalt)</h2>
+        <div class="step-guide">
+            <div class="step">
+                <strong>Steg 1:</strong> Første spørsmål: "Hva er NS 3457?"
+            </div>
+            <div class="step">
+                <strong>Steg 2:</strong> Venter på svar og memory-lagring
+            </div>
+            <div class="step">
+                <strong>Steg 3:</strong> Oppfølgingsspørsmål: "Hva handlet forrige spørsmål om?"
+            </div>
+            <div class="step">
+                <strong>Forventet resultat:</strong> Systemet svarer basert på minne fra første spørsmål
+            </div>
+        </div>
+        
+        <button class="test-button" onclick="runAutoTest()" id="auto-test-btn">🚀 Kjør Automatisk Test</button>
+        <div id="auto-test-status"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Manuell Test</h2>
+        <input type="text" class="test-input" id="manual-input" placeholder="Skriv ditt spørsmål her..." />
+        <button class="test-button" onclick="sendManualQuestion()" id="manual-btn">Spør</button>
+        <div id="manual-status"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Samtalehistorikk</h2>
+        <div id="conversation-history"></div>
+    </div>
+
+    <script>
+        let currentSessionId = null;
+        let isProcessing = false;
+        let conversationHistory = [];
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeTest();
+        });
+
+        async function initializeTest() {
+            // Generate session ID
+            currentSessionId = `test_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+            document.getElementById('session-id').textContent = currentSessionId;
+            
+            // Test connection
+            try {
+                const response = await fetch('/health');
+                if (response.ok) {
+                    setStatus('connection-status', '✅ Tilkoblet', 'success');
+                } else {
+                    setStatus('connection-status', '❌ Server ikke tilgjengelig', 'error');
+                }
+            } catch (error) {
+                setStatus('connection-status', '❌ Kan ikke koble til server', 'error');
+            }
+            
+            // Refresh memory display
+            await refreshMemory();
+        }
+
+        async function refreshMemory() {
+            try {
+                const response = await fetch('/api/session/stats', {
+                    headers: { 'X-Session-ID': currentSessionId }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const memoryDisplay = document.getElementById('memory-display');
+                    
+                    if (data.conversation_memory_preview && data.conversation_memory_preview !== '0') {
+                        memoryDisplay.textContent = data.conversation_memory_preview;
+                        memoryDisplay.classList.add('has-memory');
+                    } else {
+                        memoryDisplay.textContent = 'Ingen conversation memory lagret for denne sessionen.';
+                        memoryDisplay.classList.remove('has-memory');
+                    }
+                } else {
+                    console.error('Failed to fetch memory:', response.status);
+                }
+            } catch (error) {
+                console.error('Error refreshing memory:', error);
+            }
+        }
+
+        async function clearMemory() {
+            try {
+                await fetch('/api/session/clear', {
+                    method: 'POST',
+                    headers: { 'X-Session-ID': currentSessionId }
+                });
+                await refreshMemory();
+                conversationHistory = [];
+                updateConversationHistory();
+                setStatus('auto-test-status', '🗑️ Memory og historie ryddet', 'info');
+            } catch (error) {
+                setStatus('auto-test-status', '❌ Kunne ikke rydde memory', 'error');
+            }
+        }
+
+        async function runAutoTest() {
+            const btn = document.getElementById('auto-test-btn');
+            const status = document.getElementById('auto-test-status');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> Kjører test...';
+            
+            try {
+                // Rydd først
+                await clearMemory();
+                
+                // Steg 1: Første spørsmål
+                setStatus('auto-test-status', '📝 Steg 1: Sender første spørsmål...', 'info');
+                const firstAnswer = await askQuestion('Hva er NS 3457?');
+                
+                if (!firstAnswer) {
+                    throw new Error('Første spørsmål feilet');
+                }
+                
+                // Vent på memory lagring
+                setStatus('auto-test-status', '⏳ Venter på memory-lagring (3 sekunder)...', 'info');
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                
+                await refreshMemory();
+                
+                // Sjekk at memory er lagret
+                const memoryCheck = document.getElementById('memory-display');
+                if (!memoryCheck.classList.contains('has-memory')) {
+                    throw new Error('Memory ble ikke lagret etter første spørsmål');
+                }
+                
+                // Steg 2: Oppfølgingsspørsmål
+                setStatus('auto-test-status', '🧠 Steg 2: Sender oppfølgingsspørsmål...', 'info');
+                const secondAnswer = await askQuestion('Hva handlet forrige spørsmål om?');
+                
+                if (!secondAnswer) {
+                    throw new Error('Oppfølgingsspørsmål feilet');
+                }
+                
+                // Sjekk om svaret refererer til første spørsmål
+                const hasMemoryReference = secondAnswer.toLowerCase().includes('ns 3457') || 
+                                         secondAnswer.toLowerCase().includes('forrige') ||
+                                         secondAnswer.toLowerCase().includes('spurte');
+                
+                if (hasMemoryReference) {
+                    setStatus('auto-test-status', '🎉 TEST BESTÅTT! Conversation memory fungerer perfekt!', 'success');
+                } else {
+                    setStatus('auto-test-status', '⚠️ TEST DELVIS BESTÅTT: Svar mottatt, men usikker på memory-bruk', 'info');
+                }
+                
+            } catch (error) {
+                setStatus('auto-test-status', `❌ TEST FEILET: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🚀 Kjør Automatisk Test';
+            }
+        }
+
+        async function sendManualQuestion() {
+            const input = document.getElementById('manual-input');
+            const question = input.value.trim();
+            
+            if (!question) return;
+            
+            const answer = await askQuestion(question);
+            input.value = '';
+            
+            if (answer) {
+                setTimeout(() => refreshMemory(), 2000);
+            }
+        }
+
+        async function askQuestion(question) {
+            if (isProcessing) return null;
+            
+            isProcessing = true;
+            
+            try {
+                // Add question to history
+                addToHistory('user', question);
+                
+                // Send to API
+                const response = await fetch('/api/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': currentSessionId
+                    },
+                    body: JSON.stringify({ question: question })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API feil: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const answer = data.answer;
+                
+                // Add answer to history
+                addToHistory('assistant', answer);
+                
+                return answer;
+                
+            } catch (error) {
+                addToHistory('error', `Feil: ${error.message}`);
+                return null;
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        function addToHistory(role, content) {
+            conversationHistory.push({ role, content, timestamp: new Date() });
+            updateConversationHistory();
+        }
+
+        function updateConversationHistory() {
+            const container = document.getElementById('conversation-history');
+            container.innerHTML = '';
+            
+            conversationHistory.forEach((msg, index) => {
+                const div = document.createElement('div');
+                div.className = `message ${msg.role}`;
+                
+                const timestamp = msg.timestamp.toLocaleTimeString();
+                const roleIcon = msg.role === 'user' ? '👤' : msg.role === 'assistant' ? '🤖' : '❌';
+                
+                div.innerHTML = `
+                    <div style="font-size: 12px; color: #666; margin-bottom: 5px;">
+                        ${roleIcon} ${msg.role.toUpperCase()} - ${timestamp}
+                    </div>
+                    <div>${msg.content}</div>
+                `;
+                
+                container.appendChild(div);
+            });
+            
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function setStatus(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `status ${type}`;
+        }
+
+        // Handle Enter key in manual input
+        document.getElementById('manual-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !isProcessing) {
+                sendManualQuestion();
+            }
+        });
+    </script>
+</body>
+</html> 

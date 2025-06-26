@@ -10,6 +10,14 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 import os
+import asyncio
+
+# Import OpenAI for AI-generated titles
+try:
+    from openai import AsyncOpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
 
 @dataclass
 class Conversation:
@@ -32,9 +40,32 @@ class Message:
 class SessionManager:
     """Håndterer brukersesjoner og samtalehistorikk"""
     
-    def __init__(self, db_path: str = "conversations.db"):
+    def __init__(self, db_path: str = "conversations.db", enable_ai_titles: bool = True):
         self.db_path = db_path
         self.init_database()
+        
+        # Initialize OpenAI client for AI-generated titles
+        self.openai_client = None
+        self.ai_titles_enabled = False
+        self.enable_ai_titles = enable_ai_titles  # Konfigurasjon for AI-titler
+        self.title_cache = {}  # Cache for AI-genererte titler
+        
+        if OPENAI_AVAILABLE and enable_ai_titles:
+            try:
+                openai_key = os.getenv("OPENAI_API_KEY")
+                if openai_key:
+                    self.openai_client = AsyncOpenAI(api_key=openai_key)
+                    self.ai_titles_enabled = True
+                    print("✅ AI-genererte titler aktivert")
+                else:
+                    print("⚠️ OPENAI_API_KEY ikke funnet - bruker regelbaserte titler")
+            except Exception as e:
+                print(f"⚠️ Kunne ikke initialisere OpenAI for titler: {e}")
+        else:
+            if not enable_ai_titles:
+                print("🔧 AI-titler deaktivert via konfigurasjon")
+            else:
+                print("⚠️ OpenAI ikke tilgjengelig - bruker regelbaserte titler")
     
     def init_database(self):
         """Initialiser database tabeller"""
@@ -70,6 +101,216 @@ class SessionManager:
                 ON messages(conversation_id, timestamp DESC)
             """)
     
+    async def generate_ai_title(self, question: str, answer: str) -> Optional[str]:
+        """Generer intelligent tittel ved hjelp av OpenAI med caching og optimalisering"""
+        if not self.ai_titles_enabled or not self.openai_client:
+            return None
+            
+        # Simpel cache basert på spørsmålshash
+        cache_key = hash(question[:100])  # Bruk første 100 tegn for caching
+        if cache_key in self.title_cache:
+            cached_title = self.title_cache[cache_key]
+            print(f"🔄 Bruker cached AI-tittel: {cached_title}")
+            return cached_title
+            
+        try:
+            # Optimalisert innhold for å spare tokens
+            question_preview = question[:150] if question else ""
+            answer_preview = answer[:200] if answer else ""
+            
+            # Forbedret prompt med mer spesifikke instruksjoner
+            prompt = f"""Lag en kort, presis tittel for denne samtalen om norske standarder.
+
+Spørsmål: {question_preview}
+Svar: {answer_preview}
+
+Tittelkrav:
+- Maksimum 4-5 ord på norsk
+- Hvis standardnummer nevnes (NS-EN, ISO, TEK), start med det
+- Ellers beskriv hovedtemaet konkret
+- Unngå: "spørsmål", "om", "informasjon", "hjelp"
+
+Gode eksempler:
+- "NS-EN 1090 stålkonstruksjoner"
+- "Brannkrav kontorbygg"
+- "ISO 9001 kvalitetsstyring"
+- "Ventilasjon boligkrav"
+
+Tittel:"""
+
+            response = await self.openai_client.chat.completions.create(
+                model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=25,  # Redusert for kortere titler
+                temperature=0.2,  # Lavere for mer konsistente resultater
+                timeout=8  # Redusert timeout
+            )
+            
+            if response.choices and response.choices[0].message.content:
+                title = response.choices[0].message.content.strip()
+                
+                # Forbedret tittelrensing
+                title = title.replace('"', '').replace("'", "").replace(':', '').strip()
+                
+                # Fjern innledende fraser som kan ha sluppet gjennom
+                unwanted_starts = ['tittel:', 'svar:', 'for å', 'denne']
+                for start in unwanted_starts:
+                    if title.lower().startswith(start):
+                        title = title[len(start):].strip()
+                
+                # Sørg for rimelig lengde
+                if len(title) > 45:
+                    title = title[:42] + "..."
+                
+                if title and len(title) > 3:
+                    # Cache resultatet
+                    self.title_cache[cache_key] = title
+                    return title
+                
+        except asyncio.TimeoutError:
+            print("⚠️ AI tittel timeout (8s) - bruker fallback")
+            return None
+        except Exception as e:
+            print(f"⚠️ AI tittel feil: {e}")
+            return None
+            
+        return None
+
+    def extract_standards_improved(self, question: str, answer: str) -> List[str]:
+        """Forbedret standarddeteksjon med flere mønstre"""
+        # Utvidede regex-mønstre for norske og internasjonale standarder
+        patterns = [
+            r'\b(NS[\s\-]?EN[\s\-]?[0-9A-Z\-\:\+]+)\b',  # NS-EN standarder
+            r'\b(EN[\s\-]?[0-9A-Z\-\:\+]+)\b',           # EN standarder
+            r'\b(ISO[\s\-]?[0-9A-Z\-\:\+]+)\b',          # ISO standarder
+            r'\b(IEC[\s\-]?[0-9A-Z\-\:\+]+)\b',          # IEC standarder
+            r'\b(NORSOK[\s\-]?[A-Z0-9\-]+)\b',           # NORSOK standarder
+            r'\b(TEK[\s\-]?[0-9]+)\b',                    # TEK forskrifter
+            r'\b(NS[\s\-]?[0-9A-Z\-\:\+]+)\b',           # NS standarder
+        ]
+        
+        standards_found = set()
+        combined_text = (question + " " + answer).upper()
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, combined_text)
+            standards_found.update(matches[:3])  # Maks 3 standarder
+            
+        return list(standards_found)
+
+    def analyze_content_for_topic(self, question: str) -> Optional[str]:
+        """Analyser innhold for å identifisere hovedtema"""
+        
+        # Definer tema-kategorier med nøkkelord
+        topics = {
+            'brann': ['brann', 'røykdetektør', 'sprinkler', 'evakuering', 'flukt', 'røykkontroll'],
+            'bygg': ['bygg', 'konstruksjon', 'betong', 'stål', 'fundament', 'byggetegning'],
+            'elektrisk': ['elektrisk', 'kabel', 'installasjon', 'el-anlegg', 'strøm', 'ledning'],
+            'miljø': ['miljø', 'utslipp', 'avfall', 'forurensning', 'klima', 'energi'],
+            'kvalitet': ['kvalitet', 'kontroll', 'sertifisering', 'testing', 'godkjenning'],
+            'ventilasjon': ['ventilasjon', 'luft', 'klima', 'vifter', 'kanaler'],
+            'isolasjon': ['isolasjon', 'isolering', 'varme', 'kulde', 'energi'],
+            'sikkerhet': ['sikkerhet', 'vern', 'beskyttelse', 'risiko', 'fare']
+        }
+        
+        question_lower = question.lower()
+        
+        # Tell treff for hvert tema
+        topic_scores = {}
+        for topic, keywords in topics.items():
+            score = sum(1 for keyword in keywords if keyword in question_lower)
+            if score > 0:
+                topic_scores[topic] = score
+        
+        # Returner mest relevante tema
+        if topic_scores:
+            best_topic = max(topic_scores, key=topic_scores.get)
+            return best_topic
+            
+        return None
+
+    def create_descriptive_fallback(self, question: str) -> str:
+        """Lag beskrivende fallback-tittel basert på spørsmål"""
+        
+        # Fjern vanlige stoppord og normaliser
+        stop_words = {
+            'hva', 'hvor', 'når', 'hvordan', 'kan', 'du', 'jeg', 'er', 'om', 
+            'den', 'det', 'og', 'i', 'på', 'til', 'for', 'med', 'av', 'skal',
+            'vil', 'være', 'har', 'som', 'en', 'et', 'de', 'seg', 'ikke'
+        }
+        
+        words = [w for w in question.lower().split() if w not in stop_words and len(w) > 2]
+        
+        # Prioriter tekniske termer og substantiver
+        important_words = []
+        for word in words[:8]:  # Sjekk de første 8 relevante ordene
+            # Behold ord som inneholder tall, er store bokstaver, eller er lange
+            if (any(char.isdigit() for char in word) or 
+                word.isupper() or 
+                len(word) > 4 or
+                word in ['standard', 'krav', 'regel', 'norm', 'forskrift']):
+                important_words.append(word.title())
+        
+        if important_words:
+            title = " ".join(important_words[:4])  # Maks 4 ord
+            return title if len(title) <= 40 else title[:37] + "..."
+        
+        # Siste fallback - bare de første ordene
+        if words:
+            title = " ".join(words[:3]).title()
+            return title if len(title) <= 30 else title[:27] + "..."
+            
+        return "Ny samtale"
+
+    def generate_conversation_title_improved(self, question: str, answer: str) -> str:
+        """Forbedret tittelgenerering med AI og intelligent fallback"""
+        
+        # 1. Prøv AI-generering først hvis tilgjengelig
+        if self.ai_titles_enabled:
+            try:
+                # Kjør AI-tittelgenerering synkront med kortere timeout
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    ai_title = loop.run_until_complete(
+                        asyncio.wait_for(self.generate_ai_title(question, answer), timeout=12)
+                    )
+                    if ai_title and len(ai_title.strip()) > 3:
+                        print(f"✅ AI-generert tittel: {ai_title}")
+                        return ai_title
+                finally:
+                    loop.close()
+            except asyncio.TimeoutError:
+                print("⚠️ AI-tittel timeout (12s) - bruker fallback")
+            except Exception as e:
+                print(f"⚠️ AI-tittel feil: {e}")
+
+        # 2. Prøv forbedret standarddeteksjon
+        standards = self.extract_standards_improved(question, answer)
+        if standards:
+            topic = self.analyze_content_for_topic(question)
+            if topic and len(standards) == 1:
+                return f"{standards[0]} - {topic}"
+            elif len(standards) == 1:
+                return standards[0]
+            elif len(standards) <= 3:
+                return " og ".join(standards[:2])  # Vis maks 2 for lesbarhet
+            else:
+                return f"{standards[0]} og {len(standards)-1} andre"
+
+        # 3. Bruk temabasert tittel
+        topic = self.analyze_content_for_topic(question)
+        if topic:
+            return f"Spørsmål om {topic}"
+
+        # 4. Forbedret fallback basert på innhold
+        descriptive_title = self.create_descriptive_fallback(question)
+        if descriptive_title != "Ny samtale":
+            return descriptive_title
+
+        # 5. Siste fallback - original logikk
+        return self.generate_conversation_title(question, answer)
+    
     def generate_conversation_title(self, question: str, answer: str) -> str:
         """Generer samtale tittel basert på standarder nevnt"""
         # Søk etter standardnumre i spørsmål og svar
@@ -100,7 +341,7 @@ class SessionManager:
     def create_conversation(self, question: str, answer: str) -> str:
         """Opprett ny samtale og returner ID"""
         conversation_id = str(uuid.uuid4())
-        title = self.generate_conversation_title(question, answer)
+        title = self.generate_conversation_title_improved(question, answer)
         
         with sqlite3.connect(self.db_path) as conn:
             # Opprett samtale
@@ -228,5 +469,95 @@ class SessionManager:
             
             return None
 
-# Global session manager instans
-session_manager = SessionManager() 
+    def clear_title_cache(self):
+        """Tøm cache for AI-genererte titler"""
+        self.title_cache.clear()
+        print("🧹 Title cache cleared")
+    
+    def get_title_cache_stats(self):
+        """Hent statistikk for title cache"""
+        return {
+            "cached_titles": len(self.title_cache),
+            "cache_keys": list(self.title_cache.keys())[:10]  # Vis bare første 10
+        }
+    
+    async def update_conversation_title_ai(self, conversation_id: str) -> bool:
+        """Oppdater en eksisterende samtale med AI-generert tittel"""
+        if not self.ai_titles_enabled:
+            print("⚠️ AI-titler ikke aktivert")
+            return False
+            
+        try:
+            # Hent første melding i samtalen
+            messages = self.get_conversation_messages(conversation_id)
+            if not messages:
+                print("⚠️ Ingen meldinger funnet for samtale")
+                return False
+                
+            first_message = messages[0]
+            
+            # Generer ny AI-tittel
+            new_title = await self.generate_ai_title(first_message.question, first_message.answer)
+            
+            if new_title:
+                # Oppdater tittelen i databasen
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute("""
+                        UPDATE conversations 
+                        SET title = ?
+                        WHERE id = ?
+                    """, (new_title, conversation_id))
+                
+                print(f"✅ Oppdatert tittel for {conversation_id}: '{new_title}'")
+                return True
+            else:
+                print("⚠️ Kunne ikke generere AI-tittel for eksisterende samtale")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Feil ved oppdatering av samtale-tittel: {e}")
+            return False
+    
+    def update_all_conversation_titles(self, limit: int = 10) -> Dict:
+        """Oppdater titler for de siste samtalene med AI-genererte titler"""
+        if not self.ai_titles_enabled:
+            return {"error": "AI-titler ikke aktivert"}
+        
+        conversations = self.get_conversation_history(limit)
+        results = {"updated": 0, "failed": 0, "skipped": 0}
+        
+        print(f"🔄 Oppdaterer titler for {len(conversations)} samtaler...")
+        
+        for conv in conversations:
+            try:
+                # Skip if title already looks AI-generated (not just standard numbers)
+                if (len(conv.title.split()) >= 3 and 
+                    not conv.title.startswith(('NS-', 'EN ', 'ISO ', 'IEC ')) and
+                    'chat' not in conv.title.lower()):
+                    print(f"⏭️ Hopper over: '{conv.title}' (ser allerede bra ut)")
+                    results["skipped"] += 1
+                    continue
+                
+                # Run async update in a new event loop
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    success = loop.run_until_complete(
+                        asyncio.wait_for(self.update_conversation_title_ai(conv.id), timeout=15)
+                    )
+                    if success:
+                        results["updated"] += 1
+                    else:
+                        results["failed"] += 1
+                finally:
+                    loop.close()
+                    
+            except Exception as e:
+                print(f"❌ Feil ved oppdatering av {conv.id}: {e}")
+                results["failed"] += 1
+        
+        print(f"✅ Oppdatering fullført: {results['updated']} oppdatert, {results['failed']} feilet, {results['skipped']} hoppet over")
+        return results
+
+# Global session manager instans med AI-titler aktivert
+session_manager = SessionManager(enable_ai_titles=True) 

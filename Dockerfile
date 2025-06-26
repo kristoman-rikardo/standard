@@ -1,25 +1,24 @@
-# StandardGPT Production Dockerfile
+# StandardGPT Railway Production Dockerfile
 FROM python:3.11-slim
 
 # Sett metadata
 LABEL maintainer="StandardGPT Team"
-LABEL version="1.0.0"
-LABEL description="AI-powered search application for Norwegian and international standards"
+LABEL version="2.0.0"
+LABEL description="AI-powered search application for Norwegian standards with AI-generated conversation titles"
 
-# Sett miljøvariabler
+# Sett miljøvariabler for Railway og produksjon
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     FLASK_ENV=production \
-    GUNICORN_WORKERS=4 \
-    GUNICORN_TIMEOUT=120
-
-# Opprett app bruker for sikkerhet
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Installer system avhengigheter
 RUN apt-get update && apt-get install -y \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    gcc \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Sett arbeidsmappe
 WORKDIR /app
@@ -27,27 +26,23 @@ WORKDIR /app
 # Kopier requirements først for bedre Docker layer caching
 COPY requirements.txt .
 
-# Installer Python avhengigheter
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir gunicorn
+# Installer Python avhengigheter med optimalisering
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Kopier applikasjonskode
 COPY . .
 
-# Opprett nødvendige mapper
+# Opprett nødvendige mapper og sett rettigheter
 RUN mkdir -p logs static/css static/js static/img && \
-    chown -R appuser:appuser /app
+    chmod -R 755 /app
 
-# Bytt til app bruker
-USER appuser
+# Railway bruker automatisk PORT miljøvariabel
+EXPOSE $PORT
 
-# Eksponer port
-EXPOSE 5000
+# Health check tilpasset Railway
+HEALTHCHECK --interval=30s --timeout=15s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:$PORT/health || exit 1
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:5000/health || exit 1
-
-# Start kommando
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "--keep-alive", "5", "--max-requests", "1000", "--max-requests-jitter", "100", "--preload", "app:app"] 
+# Railway start kommando - bruker PORT miljøvariabel
+CMD gunicorn --bind 0.0.0.0:$PORT --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-120} --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --preload --access-logfile - --error-logfile - app:app 

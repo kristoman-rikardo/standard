@@ -1,0 +1,317 @@
+[
+  {
+    "name": "Grunnleggende Memory med Standard-nummer",
+    "session_id": "test_memory_1750786227_3f4ba5d0",
+    "steps": [
+      {
+        "step": 1,
+        "question": "Hva er NORSOK M-001?",
+        "route": "including",
+        "analysis": "including",
+        "answer_length": 1197,
+        "answer_preview": "NORSOK M-001 er en standard utviklet som en del av NORSOK-initiativet, som har som mål å forbedre konkurranseevnen til den norske offshoresektoren ved å redusere kostnader og ledetid, samt fjerne unød...",
+        "memory_terms": [],
+        "processing_time": 21.74591898918152,
+        "success": true,
+        "expected_route": "including",
+        "route_correct": true
+      },
+      {
+        "step": 2,
+        "question": "Kan du utdype mer om den?",
+        "route": "memory",
+        "analysis": "memory",
+        "answer_length": 1379,
+        "answer_preview": "NORSOK M-001 er en standard som gir retningslinjer for materialvalg og korrosjonsbeskyttelse innenfor den norske petroleumsindustrien. Standarden er utviklet som en del av NORSOK-initiativet, som har ...",
+        "memory_terms": [
+          "NORSOK M-001",
+          "PRNORSOK M-001:2024"
+        ],
+        "processing_time": 27.457641124725342,
+        "success": true,
+        "expected_route": "memory",
+        "route_correct": true
+      }
+    ],
+    "overall_success": true,
+    "memory_detection": true,
+    "conversation_context": true,
+    "session_stats": {
+      "conversation_memory_length": 2076,
+      "conversation_memory_preview": "USER: Hva er NORSOK M-001?\nSYSTEM: NORSOK M-001 er en standard utviklet som en del av NORSOK-initiativet, som har som mål å forbedre konkurranseevnen til den norske offshoresektoren ved å redusere kos...",
+      "current_session_exchanges": 2,
+      "session_id": "test_memory_1750786227_3f4ba5d0",
+      "sessions_list": [
+        "test_memory_1750786227_3f4ba5d0"
+      ],
+      "total_sessions": 1
+    }
+  },
+  {
+    "name": "Kompleks Memory med Multiple Standards",
+    "session_id": "test_memory_1750786279_790c6841",
+    "steps": [
+      {
+        "step": 1,
+        "question": "Sammenlign NORSOK M-001 og NORSOK M-004",
+        "route": "including",
+        "analysis": "including",
+        "answer_length": 2138,
+        "answer_preview": "NORSOK M-001 og NORSOK M-004 er begge standarder utviklet for å støtte den norske petroleumsindustrien, men de dekker forskjellige aspekter av materialvalg og bruk.\n\n**NORSOK M-001:**\n\n- **Formål:** D...",
+        "memory_terms": [],
+        "processing_time": 29.119149684906006,
+        "success": true,
+        "expected_route": "including",
+        "route_correct": true
+      },
+      {
+        "step": 2,
+        "question": "Hvilken av disse er best for materialvalg?",
+        "route": "memory",
+        "analysis": "memory",
+        "answer_length": 970,
+        "answer_preview": "For materialvalg innenfor den norske petroleumsindustrien, er NORSOK M-001 en av de mest relevante standardene. Denne standarden gir omfattende retningslinjer for materialvalg, korrosjonsbeskyttelse o...",
+        "memory_terms": [
+          "NORSOK M-001",
+          "NORSOK M-004"
+        ],
+        "processing_time": 14.83602499961853,
+        "success": true,
+        "expected_route": "memory",
+        "route_correct": true
+      }
+    ],
+    "overall_success": true,
+    "memory_detection": true,
+    "conversation_context": true,
+    "session_stats": {
+      "conversation_memory_length": 2082,
+      "conversation_memory_preview": "USER: Sammenlign NORSOK M-001 og NORSOK M-004\nSYSTEM: NORSOK M-001 og NORSOK M-004 er begge standarder utviklet for å støtte den norske petroleumsindustrien, men de dekker forskjellige aspekter av mat...",
+      "current_session_exchanges": 2,
+      "session_id": "test_memory_1750786279_790c6841",
+      "sessions_list": [
+        "test_memory_1750786227_3f4ba5d0",
+        "test_memory_1750786279_790c6841"
+      ],
+      "total_sessions": 2
+    }
+  },
+  {
+    "name": "Kontekstuell Memory uten eksplisitt pronomen",
+    "session_id": "test_memory_1750786325_9d622e1e",
+    "steps": [
+      {
+        "step": 1,
+        "question": "Hva er krav til isolasjon i M-004?",
+        "route": "including",
+        "analysis": "including",
+        "answer_length": 1205,
+        "answer_preview": "NORSOK M-004:2018 omhandler rør og utstyrsisolasjon, og gir spesifikasjoner for materialer, installasjon og inspeksjon av isolasjonssystemer. Når det gjelder krav til isolasjon i M-004, er det flere a...",
+        "memory_terms": [],
+        "processing_time": 13.924937963485718,
+        "success": true,
+        "expected_route": "including",
+        "route_correct": true
+      },
+      {
+        "step": 2,
+        "question": "Utdyp om inspeksjons og testplan",
+        "route": "memory",
+        "analysis": "memory",
+        "answer_length": 865,
+        "answer_preview": "En inspeksjons- og testplan (ITP) er et viktig dokument i prosjekter som involverer isolasjonsarbeid, som beskrevet i NORSOK M-004:2018. ITP-en skal etableres av isolasjonsentreprenøren og reflektere ...",
+        "memory_terms": [
+          "NORSOK M-004:2018"
+        ],
+        "processing_time": 15.743257761001587,
+        "success": true,
+        "expected_route": "memory",
+        "route_correct": true
+      }
+    ],
+    "overall_success": true,
+    "memory_detection": true,
+    "conversation_context": true,
+    "session_stats": {
+      "conversation_memory_length": 1962,
+      "conversation_memory_preview": "USER: Hva er krav til isolasjon i M-004?\nSYSTEM: NORSOK M-004:2018 omhandler rør og utstyrsisolasjon, og gir spesifikasjoner for materialer, installasjon og inspeksjon av isolasjonssystemer. Når det g...",
+      "current_session_exchanges": 2,
+      "session_id": "test_memory_1750786325_9d622e1e",
+      "sessions_list": [
+        "test_memory_1750786227_3f4ba5d0",
+        "test_memory_1750786279_790c6841",
+        "test_memory_1750786325_9d622e1e"
+      ],
+      "total_sessions": 3
+    }
+  },
+  {
+    "name": "Memory Chain - Flere oppfølginger",
+    "session_id": "test_memory_1750786356_266e5592",
+    "steps": [
+      {
+        "step": 1,
+        "question": "Fortell meg om NORSOK S-001",
+        "route": "including",
+        "analysis": "including",
+        "answer_length": 1034,
+        "answer_preview": "NORSOK S-001 er en standard som omhandler teknisk sikkerhet i offshore petroleumsvirksomhet. Standarden er utviklet for å supplere NS-EN ISO 13702 med spesifikke krav og erfaringer fra norske operatør...",
+        "memory_terms": [],
+        "processing_time": 17.13268208503723,
+        "success": true,
+        "expected_route": "including",
+        "route_correct": true
+      },
+      {
+        "step": 2,
+        "question": "Hva krever den for brannbeskyttelse?",
+        "route": "memory",
+        "analysis": "memory",
+        "answer_length": 886,
+        "answer_preview": "NORSOK S-001N:2000 gir spesifikke retningslinjer for brannbeskyttelse i offshore petroleumsvirksomhet. Ifølge utdragene er det krav om at brannbekjempelsesanlegg skal installeres i områder med stor br...",
+        "memory_terms": [
+          "NORSOK S-001"
+        ],
+        "processing_time": 15.216624021530151,
+        "success": true,
+        "expected_route": "memory",
+        "route_correct": true
+      },
+      {
+        "step": 3,
+        "question": "Er det noen unntak fra disse kravene?",
+        "route": "memory",
+        "analysis": "memory",
+        "answer_length": 930,
+        "answer_preview": "NORSOK S-001N:2000 inneholder spesifikke krav til brannbeskyttelse i offshore petroleumsvirksomhet, men det er også muligheter for unntak eller alternative løsninger under visse betingelser. For eksem...",
+        "memory_terms": [
+          "NORSOK S-001N:2000"
+        ],
+        "processing_time": 14.651522159576416,
+        "success": true,
+        "expected_route": "memory",
+        "route_correct": true
+      }
+    ],
+    "overall_success": true,
+    "memory_detection": true,
+    "conversation_context": true,
+    "session_stats": {
+      "conversation_memory_length": 2963,
+      "conversation_memory_preview": "USER: Fortell meg om NORSOK S-001\nSYSTEM: NORSOK S-001 er en standard som omhandler teknisk sikkerhet i offshore petroleumsvirksomhet. Standarden er utviklet for å supplere NS-EN ISO 13702 med spesifi...",
+      "current_session_exchanges": 3,
+      "session_id": "test_memory_1750786356_266e5592",
+      "sessions_list": [
+        "test_memory_1750786227_3f4ba5d0",
+        "test_memory_1750786279_790c6841",
+        "test_memory_1750786325_9d622e1e",
+        "test_memory_1750786356_266e5592"
+      ],
+      "total_sessions": 4
+    }
+  },
+  {
+    "name": "Cross-Standard Memory",
+    "session_id": "test_memory_1750786406_54c08e60",
+    "steps": [
+      {
+        "step": 1,
+        "question": "Hva er NS 3457-7?",
+        "route": "including",
+        "analysis": "including",
+        "answer_length": 1039,
+        "answer_preview": "NS 3457-7:2021 er en norsk standard som gir en systemstruktur for tekniske installasjoner i bygninger. Standarden er en del av serien NS 3457, som omhandler klassifikasjon av byggverk. NS 3457-7 spesi...",
+        "memory_terms": [],
+        "processing_time": 20.292712926864624,
+        "success": true,
+        "expected_route": "including",
+        "route_correct": true
+      },
+      {
+        "step": 2,
+        "question": "Hva er forskjellen mellom den og NORSOK M-001?",
+        "route": "memory",
+        "analysis": "memory",
+        "answer_length": 1161,
+        "answer_preview": "NS 3457-7:2021 og NORSOK M-001 er to forskjellige standarder med ulike formål og anvendelser.\n\n**NS 3457-7:2021** er en norsk standard som gir en systemstruktur for tekniske installasjoner i bygninger...",
+        "memory_terms": [
+          "NS 3457-7:2021",
+          "NORSOK M-001"
+        ],
+        "processing_time": 14.947697877883911,
+        "success": true,
+        "expected_route": "memory",
+        "route_correct": true
+      }
+    ],
+    "overall_success": true,
+    "memory_detection": true,
+    "conversation_context": true,
+    "session_stats": {
+      "conversation_memory_length": 2093,
+      "conversation_memory_preview": "USER: Hva er NS 3457-7?\nSYSTEM: NS 3457-7:2021 er en norsk standard som gir en systemstruktur for tekniske installasjoner i bygninger. Standarden er en del av serien NS 3457, som omhandler klassifikas...",
+      "current_session_exchanges": 2,
+      "session_id": "test_memory_1750786406_54c08e60",
+      "sessions_list": [
+        "test_memory_1750786227_3f4ba5d0",
+        "test_memory_1750786279_790c6841",
+        "test_memory_1750786325_9d622e1e",
+        "test_memory_1750786356_266e5592",
+        "test_memory_1750786406_54c08e60"
+      ],
+      "total_sessions": 5
+    }
+  },
+  {
+    "name": "Edge Case - Vag referanse",
+    "session_id": "test_memory_1750786444_b8d33bc1",
+    "steps": [
+      {
+        "step": 1,
+        "question": "Hvilke materialkrav finnes i M-004?",
+        "route": "including",
+        "analysis": "including",
+        "answer_length": 918,
+        "answer_preview": "NORSOK M-004:2018 inneholder materialkrav for isolasjonsmaterialer som brukes i rør og utstyr. Ifølge utdragene fra standarden, er det spesifikke materialdatablad for følgende isolasjonsmaterialer ink...",
+        "memory_terms": [],
+        "processing_time": 25.78059697151184,
+        "success": true,
+        "expected_route": "including",
+        "route_correct": true
+      },
+      {
+        "step": 2,
+        "question": "Gjelder dette også offshore?",
+        "route": "memory",
+        "analysis": "memory",
+        "answer_length": 591,
+        "answer_preview": "Ja, NORSOK M-004:2018 gjelder også for offshore-applikasjoner. Ifølge utdragene fra standarden, er det spesifikke krav til materialer og kladding som skal brukes offshore. For eksempel skal kladding f...",
+        "memory_terms": [
+          "NORSOK M-004:2018"
+        ],
+        "processing_time": 13.318588018417358,
+        "success": true,
+        "expected_route": "memory",
+        "route_correct": true
+      }
+    ],
+    "overall_success": true,
+    "memory_detection": true,
+    "conversation_context": true,
+    "session_stats": {
+      "conversation_memory_length": 1603,
+      "conversation_memory_preview": "USER: Hvilke materialkrav finnes i M-004?\nSYSTEM: NORSOK M-004:2018 inneholder materialkrav for isolasjonsmaterialer som brukes i rør og utstyr. Ifølge utdragene fra standarden, er det spesifikke mate...",
+      "current_session_exchanges": 2,
+      "session_id": "test_memory_1750786444_b8d33bc1",
+      "sessions_list": [
+        "test_memory_1750786227_3f4ba5d0",
+        "test_memory_1750786279_790c6841",
+        "test_memory_1750786325_9d622e1e",
+        "test_memory_1750786356_266e5592",
+        "test_memory_1750786406_54c08e60",
+        "test_memory_1750786444_b8d33bc1"
+      ],
+      "total_sessions": 6
+    }
+  }
+]

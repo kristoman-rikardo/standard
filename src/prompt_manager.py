@@ -1,59 +1,223 @@
 """
-Prompt manager for StandardGPT
+Advanced prompt manager for StandardGPT with optimization and caching
 """
 
-import os
+import asyncio
+import time
+import hashlib
 import json
-import requests
-import openai
-from langchain.prompts import PromptTemplate
-from src.config import OPENAI_MODEL, OPENAI_API_KEY, OPENAI_TEMPERATURE, OPENAI_MODEL_DEFAULT, OPENAI_MODEL_ANSWER
-from src.debug_utils import log_step_start, log_step_end, log_error, debug_print
-from typing import Dict, List, Tuple, Optional, AsyncGenerator
 from pathlib import Path
+from typing import List, Dict, Any, Optional, AsyncGenerator
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+
+from langchain_core.prompts import PromptTemplate
+from openai import AsyncOpenAI
+import aiohttp
+
+from src.config import (
+    OPENAI_API_KEY, 
+    OPENAI_MODEL_DEFAULT, 
+    OPENAI_TEMPERATURE
+)
+from src.debug_utils import log_step_start, log_step_end, log_error, debug_print
+
+@dataclass
+class CacheEntry:
+    """Cache entry with TTL and metadata"""
+    value: Any
+    created: datetime = field(default_factory=datetime.now)
+    hits: int = 0
+    
+    def is_expired(self, ttl_seconds: int) -> bool:
+        return datetime.now() - self.created > timedelta(seconds=ttl_seconds)
+    
+    def increment_hits(self):
+        self.hits += 1
+
+@dataclass
+class PromptConfig:
+    """Configuration for prompt optimization"""
+    max_tokens: int
+    temperature: float
+    ttl_seconds: int  # Cache TTL
+    system_message: str
+    
+# Optimized prompt configurations based on operation type
+PROMPT_CONFIGS = {
+    "analysis": PromptConfig(
+        max_tokens=20,  # Only need single word response
+        temperature=0.1,  # Deterministic routing
+        ttl_seconds=3600,  # Cache for 1 hour
+        system_message="You are a routing system that analyzes questions and returns exactly one of: 'including', 'without', 'personal', or 'memory'."
+    ),
+    "extractStandard": PromptConfig(
+        max_tokens=100,  # Standard numbers are short
+        temperature=0.0,  # Deterministic extraction
+        ttl_seconds=1800,  # Cache for 30 minutes
+        system_message="You extract standard numbers from questions. Return only the standard numbers, comma separated."
+    ),
+    "extractFromMemory": PromptConfig(
+        max_tokens=100,  # Memory terms are short
+        temperature=0.0,  # Deterministic extraction
+        ttl_seconds=900,   # Cache for 15 minutes
+        system_message="You extract standard numbers from memory context. Return only the standard numbers, comma separated."
+    ),
+    "optimizeSemantic": PromptConfig(
+        max_tokens=200,  # Optimized questions can be longer
+        temperature=0.3,  # Some creativity for optimization
+        ttl_seconds=1800,  # Cache for 30 minutes
+        system_message="You are a helpful assistant that optimizes questions for semantic search."
+    ),
+    "optimizeTextual": PromptConfig(
+        max_tokens=150,  # Textual optimization is shorter
+        temperature=0.2,  # Slight creativity
+        ttl_seconds=1800,  # Cache for 30 minutes
+        system_message="You optimize questions for textual search by extracting key terms."
+    ),
+    "answer": PromptConfig(
+        max_tokens=1500,  # Answers need more space
+        temperature=0.4,  # Balanced creativity
+        ttl_seconds=900,   # Cache for 15 minutes (answers change more)
+        system_message="You are a knowledgeable assistant providing detailed technical answers."
+    )
+}
 
 class PromptManager:
-    """Manages all prompt operations for the StandardGPT system"""
+    """Advanced Prompt Manager with caching and optimization"""
     
     def __init__(self):
-        """Initialize the prompt manager with OpenAI client and load all prompts"""
-        # Set up OpenAI client with hardcoded API key from config
-        self.client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        self.model = OPENAI_MODEL
         self.prompts = self._load_all_prompts()
-    
-    def _call_openai(self, messages: List[Dict], temperature: float = OPENAI_TEMPERATURE, model: str = None) -> str:
+        
+        # Initialize async OpenAI client with connection pooling
+        self.client = AsyncOpenAI(
+            api_key=OPENAI_API_KEY,
+            max_retries=3,
+            timeout=30.0
+        )
+        
+        # Smart caching system
+        self.cache: Dict[str, CacheEntry] = {}
+        self.cache_stats = {
+            "hits": 0,
+            "misses": 0,
+            "expired": 0
+        }
+        
+        # Connection pooling for HTTP requests
+        self.session = None
+        self._debug_enabled = False
+
+    async def __aenter__(self):
+        """Async context manager entry"""
+        self.session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=30),
+            connector=aiohttp.TCPConnector(limit=10, limit_per_host=5)
+        )
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit"""
+        if self.session:
+            await self.session.close()
+
+    def _generate_cache_key(self, prompt_type: str, content: str, **kwargs) -> str:
+        """Generate cache key from prompt type and content"""
+        # For memory-based prompts, include conversation memory in cache key
+        cache_data = {
+            "type": prompt_type,
+            "content": content,
+            "kwargs": kwargs
+        }
+        
+        # For prompts that use conversation memory, include it in the cache key
+        # to prevent cross-session contamination
+        conversation_memory = kwargs.get("conversation_memory", "")
+        if conversation_memory and conversation_memory != "0" and conversation_memory != "":
+            cache_data["memory_hash"] = hashlib.md5(conversation_memory.encode()).hexdigest()[:8]
+        
+        # For memory route, include session context to prevent cache sharing
+        if prompt_type == "answer" and conversation_memory and conversation_memory != "0":
+            cache_data["memory_context"] = True
+            
+        return hashlib.md5(json.dumps(cache_data, sort_keys=True).encode()).hexdigest()
+
+    def _get_from_cache(self, cache_key: str, ttl_seconds: int) -> Optional[Any]:
+        """Get value from cache if not expired"""
+        if cache_key in self.cache:
+            entry = self.cache[cache_key]
+            if entry.is_expired(ttl_seconds):
+                del self.cache[cache_key]
+                self.cache_stats["expired"] += 1
+                return None
+            else:
+                entry.increment_hits()
+                self.cache_stats["hits"] += 1
+                return entry.value
+        
+        self.cache_stats["misses"] += 1
+        return None
+
+    def _set_cache(self, cache_key: str, value: Any):
+        """Set value in cache"""
+        self.cache[cache_key] = CacheEntry(value=value)
+
+    async def _call_openai_optimized(self, prompt_type: str, messages: List[Dict], **kwargs) -> str:
         """
-        Call OpenAI API with modern syntax
+        Optimized OpenAI API call with caching and prompt-specific configuration
         
         Args:
-            messages: List of message dicts for OpenAI
-            temperature: Temperature for response generation (default from config)
-            model: OpenAI model to use (defaults to OPENAI_MODEL_DEFAULT)
+            prompt_type: Type of prompt for optimization
+            messages: OpenAI messages
+            **kwargs: Additional parameters
             
         Returns:
             str: Generated response content
         """
-        if model is None:
-            model = OPENAI_MODEL_DEFAULT
-            
-        # Set max_tokens to 8000 for all prompts consistently
-        max_tokens = 8000
-            
+        config = PROMPT_CONFIGS.get(prompt_type, PROMPT_CONFIGS["answer"])
+        
+        # Generate cache key
+        cache_key = self._generate_cache_key(prompt_type, str(messages), **kwargs)
+        
+        # Try cache first
+        cached_result = self._get_from_cache(cache_key, config.ttl_seconds)
+        if cached_result is not None:
+            if self._debug_enabled:
+                debug_print("Cache", f"HIT for {prompt_type}: {cache_key[:8]}")
+            return cached_result
+        
+        if self._debug_enabled:
+            debug_print("Cache", f"MISS for {prompt_type}: {cache_key[:8]}")
+            debug_print("OpenAI", f"Using model: {OPENAI_MODEL_DEFAULT} (max_tokens: {config.max_tokens}, temp: {config.temperature})")
+        
         try:
-            if hasattr(self, '_debug_enabled') and self._debug_enabled:
-                debug_print("OpenAI", f"Using model: {model} (max_tokens: {max_tokens})")
-                
-            response = self.client.chat.completions.create(
-                model=model,
+            # Use optimized parameters
+            response = await self.client.chat.completions.create(
+                model=OPENAI_MODEL_DEFAULT,
                 messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens
+                temperature=config.temperature,
+                max_tokens=config.max_tokens,
+                stream=False
             )
-            return response.choices[0].message.content.strip()
+            
+            result = response.choices[0].message.content.strip()
+            
+            # Cache the result
+            self._set_cache(cache_key, result)
+            
+            return result
+            
         except Exception as e:
-            raise Exception(f"OpenAI API error: {e}")
-    
+            raise Exception(f"OpenAI API error for {prompt_type}: {e}")
+
+    def _call_openai(self, messages: List[Dict], temperature: float = OPENAI_TEMPERATURE, model: str = None, max_tokens: int = None) -> str:
+        """
+        LEGACY: Synchronous OpenAI call - kept for backward compatibility
+        """
+        # Convert to async call
+        import asyncio
+        return asyncio.run(self._call_openai_optimized("legacy", messages))
+
     def _load_prompt(self, name):
         """Load a single prompt from file"""
         try:
@@ -100,375 +264,311 @@ class PromptManager:
         base_input.update(kwargs)
         return base_input
     
-    def execute_optimize_semantic(self, last_utterance, conversation_memory="", debug=True):
+    async def optimize_semantic(self, question: str, conversation_memory: str = "") -> str:
         """
-        Execute the optimizeSemantic prompt
+        Async version of semantic optimization with caching
         
         Args:
-            last_utterance (str): User's original question
-            conversation_memory (str): Formatted conversation memory
-            debug (bool): Enable debug logging
+            question: User's original question
+            conversation_memory: Formatted conversation memory
             
         Returns:
             str: Optimized question for semantic search
         """
-        log_step_start(1, "OptimizeSemantic", f"{last_utterance} (Model: {OPENAI_MODEL_DEFAULT})", debug)
-        
         try:
-            prompt_input = self.create_prompt_input(last_utterance, conversation_memory=conversation_memory)
+            prompt_input = self.create_prompt_input(question, conversation_memory=conversation_memory)
             prompt_text = self.prompts["optimizeSemantic"].invoke(prompt_input).text
             
             messages = [
-                {"role": "system", "content": "You are a helpful assistant that optimizes questions for semantic search."},
+                {"role": "system", "content": PROMPT_CONFIGS["optimizeSemantic"].system_message},
                 {"role": "user", "content": prompt_text}
             ]
             
-            output = self._call_openai(messages, model=OPENAI_MODEL_DEFAULT)
-            log_step_end(1, "OptimizeSemantic", output, debug)
-            return output
+            return await self._call_openai_optimized("optimizeSemantic", messages)
             
         except Exception as e:
-            log_error("OptimizeSemantic", str(e), debug)
-            raise
-    
-    def execute_analysis(self, last_utterance, conversation_memory="", debug=True):
+            raise Exception(f"Semantic optimization failed: {e}")
+
+    async def analyze_question(self, question: str, conversation_memory: str = "") -> str:
         """
-        Execute the analysis prompt to determine routing
+        Async version of question analysis with caching and validation
         
         Args:
-            last_utterance (str): User's original question
-            conversation_memory (str): Formatted conversation memory
-            debug (bool): Enable debug logging
+            question: User's original question
+            conversation_memory: Formatted conversation memory
             
         Returns:
             str: Analysis result ("including", "without", "personal", or "memory")
         """
-        log_step_start(3, "Analysis", f"{last_utterance} (Model: {OPENAI_MODEL_DEFAULT})", debug)
-        
         try:
-            prompt_input = self.create_prompt_input(last_utterance, conversation_memory=conversation_memory)
+            prompt_input = self.create_prompt_input(question, conversation_memory=conversation_memory)
             prompt_text = self.prompts["analysis"].invoke(prompt_input).text
             
-            if debug:
-                print(f"\n🔍 DEBUG - ANALYSIS PROMPT:")
-                print(f"Conversation memory: {conversation_memory[:200]}...")
-                print(f"Prompt length: {len(prompt_text)} chars")
-                print(f"Prompt preview: {prompt_text[:500]}...")
-            
             messages = [
-                {"role": "system", "content": "You are a routing system that analyzes questions and returns exactly one of: 'including', 'without', 'personal', or 'memory'."},
+                {"role": "system", "content": PROMPT_CONFIGS["analysis"].system_message},
                 {"role": "user", "content": prompt_text}
             ]
             
-            output = self._call_openai(messages, model=OPENAI_MODEL_DEFAULT).lower().strip()
+            output = await self._call_openai_optimized("analysis", messages)
             
-            # More aggressive cleaning of output
-            output = output.strip('"\'`()[]{}.,!?;: \n\r\t')
+            # Clean and validate output
+            output = output.lower().strip().strip('"\'`()[]{}.,!?;: \n\r\t')
             
-            # Validate output
+            # Validate output against known routes
             valid_routes = ["including", "without", "personal", "memory"]
             if output not in valid_routes:
-                if debug:
-                    print(f"❌ Invalid analysis output: '{output}', defaulting to 'without'")
-                    print(f"Valid routes are: {valid_routes}")
-                output = "without"  # Safe fallback
+                return "without"  # Safe fallback
             
-            log_step_end(3, "Analysis", output, debug)
             return output
             
         except Exception as e:
-            log_error("Analysis", str(e), debug)
-            if debug:
-                print(f"❌ Analysis failed, defaulting to 'without': {str(e)}")
-            return "without"  # Safe fallback
-    
-    def execute_extract_standard(self, last_utterance, debug=True):
+            return "without"  # Safe fallback on error
+
+    async def extract_standard_numbers(self, question: str) -> List[str]:
         """
-        Execute the extractStandard prompt
+        Async version of standard number extraction with caching
         
         Args:
-            last_utterance (str): User's original question
-            debug (bool): Enable debug logging
+            question: User's question
             
         Returns:
-            str: Extracted standard numbers (comma separated)
+            List[str]: Extracted standard numbers
         """
-        log_step_start("4a", "ExtractStandard", f"{last_utterance} (Model: {OPENAI_MODEL_DEFAULT})", debug)
-        
         try:
-            prompt_input = self.create_prompt_input(last_utterance)
+            prompt_input = self.create_prompt_input(question)
             prompt_text = self.prompts["extractStandard"].invoke(prompt_input).text
             
             messages = [
-                {"role": "system", "content": "You extract standard numbers from questions. Return only the standard numbers, comma separated."},
+                {"role": "system", "content": PROMPT_CONFIGS["extractStandard"].system_message},
                 {"role": "user", "content": prompt_text}
             ]
             
-            output = self._call_openai(messages, model=OPENAI_MODEL_DEFAULT)
-            log_step_end("4a", "ExtractStandard", output, debug)
-            return output
+            output = await self._call_openai_optimized("extractStandard", messages)
+            
+            # Parse comma-separated standards
+            if output.strip():
+                standards = [s.strip() for s in output.split(",") if s.strip()]
+                return standards
+            return []
             
         except Exception as e:
-            log_error("ExtractStandard", str(e), debug)
-            raise
-    
-    def execute_extract_from_memory(self, last_utterance, conversation_memory, debug=True):
+            return []  # Return empty list on error
+
+    async def extract_from_memory(self, question: str, conversation_memory: str) -> List[str]:
         """
-        Execute the extractFromMemory prompt with GPT-4o
+        Async version of memory extraction with caching
         
         Args:
-            last_utterance (str): User's original question
-            conversation_memory (str): Formatted conversation memory
-            debug (bool): Enable debug logging
+            question: User's question
+            conversation_memory: Formatted conversation memory
             
         Returns:
-            str: Extracted terms from memory context (comma separated)
+            List[str]: Extracted terms from memory context
         """
-        log_step_start("4c", "ExtractFromMemory", f"{last_utterance[:50]}... (Model: {OPENAI_MODEL_DEFAULT})", debug)
-        
         try:
-            prompt_input = self.create_prompt_input(last_utterance, conversation_memory=conversation_memory)
+            prompt_input = self.create_prompt_input(question, conversation_memory=conversation_memory)
             prompt_text = self.prompts["extractFromMemory"].invoke(prompt_input).text
             
             messages = [
-                {"role": "system", "content": "You extract standard numbers from memory context. Return only the standard numbers, comma separated."},
+                {"role": "system", "content": PROMPT_CONFIGS["extractFromMemory"].system_message},
                 {"role": "user", "content": prompt_text}
             ]
             
-            output = self._call_openai(messages, model=OPENAI_MODEL_DEFAULT)
-            log_step_end("4c", "ExtractFromMemory", output, debug)
-            return output
+            output = await self._call_openai_optimized("extractFromMemory", messages)
+            
+            # Parse comma-separated terms
+            if output.strip():
+                terms = [s.strip() for s in output.split(",") if s.strip()]
+                return terms
+            return []
             
         except Exception as e:
-            log_error("ExtractFromMemory", str(e), debug)
-            raise
-    
-    def execute_optimize_textual(self, last_utterance, conversation_memory="", debug=True):
+            return []  # Return empty list on error
+
+    async def optimize_textual(self, question: str, conversation_memory: str = "") -> str:
         """
-        Execute the optimizeTextual prompt
+        Async version of textual optimization with caching
         
         Args:
-            last_utterance (str): User's original question
-            conversation_memory (str): Formatted conversation memory
-            debug (bool): Enable debug logging
+            question: User's question
+            conversation_memory: Formatted conversation memory
             
         Returns:
             str: Optimized text for textual search
         """
-        log_step_start("4b", "OptimizeTextual", f"{last_utterance[:50]}... (Model: {OPENAI_MODEL_DEFAULT})", debug)
-        
         try:
-            prompt_input = self.create_prompt_input(last_utterance, conversation_memory=conversation_memory)
+            prompt_input = self.create_prompt_input(question, conversation_memory=conversation_memory)
             prompt_text = self.prompts["optimizeTextual"].invoke(prompt_input).text
             
             messages = [
-                {"role": "system", "content": "You optimize questions for textual search by extracting key terms and concepts."},
+                {"role": "system", "content": PROMPT_CONFIGS["optimizeTextual"].system_message},
                 {"role": "user", "content": prompt_text}
             ]
             
-            output = self._call_openai(messages, model=OPENAI_MODEL_DEFAULT)
-            log_step_end("4b", "OptimizeTextual", output, debug)
-            return output
+            return await self._call_openai_optimized("optimizeTextual", messages)
             
         except Exception as e:
-            log_error("OptimizeTextual", str(e), debug)
-            raise
-    
-    def execute_answer(self, last_utterance, chunks, conversation_memory="", debug=True):
+            # Fallback to original question if optimization fails
+            return question
+
+    async def generate_answer(self, question: str, chunks: str, conversation_memory: str = "") -> str:
         """
-        Execute the answer prompt to generate final response
+        Async version of answer generation with caching and chunk length management
         
         Args:
-            last_utterance (str): User's original question
-            chunks (str): Retrieved document chunks
-            conversation_memory (str): Formatted conversation memory
-            debug (bool): Enable debug logging
+            question: User's original question
+            chunks: Formatted chunks from Elasticsearch
+            conversation_memory: Formatted conversation memory
             
         Returns:
             str: Final answer
         """
-        log_step_start(6, "Generate Answer", f"Question: {last_utterance[:50]}... (Model: {OPENAI_MODEL_ANSWER})", debug)
-        
         try:
-            prompt_input = self.create_prompt_input(last_utterance, chunks=chunks, conversation_memory=conversation_memory)
+            # Intelligent chunk truncation to avoid token limits
+            max_chunk_length = 15000  # Leave room for question and memory
+            if len(chunks) > max_chunk_length:
+                # Truncate but try to keep complete chunks
+                chunk_sections = chunks.split('\n\n')
+                truncated_chunks = []
+                current_length = 0
+                
+                for chunk in chunk_sections:
+                    if current_length + len(chunk) <= max_chunk_length:
+                        truncated_chunks.append(chunk)
+                        current_length += len(chunk)
+                    else:
+                        break
+                
+                chunks = '\n\n'.join(truncated_chunks)
+                if len(chunks) > max_chunk_length:
+                    chunks = chunks[:max_chunk_length] + "..."
+            
+            prompt_input = self.create_prompt_input(question, chunks=chunks, conversation_memory=conversation_memory)
             prompt_text = self.prompts["answer"].invoke(prompt_input).text
             
             messages = [
-                {"role": "system", "content": "You are a helpful assistant that answers questions based on provided document chunks. Answer in Norwegian."},
+                {"role": "system", "content": PROMPT_CONFIGS["answer"].system_message},
                 {"role": "user", "content": prompt_text}
             ]
             
-            output = self._call_openai(messages, model=OPENAI_MODEL_ANSWER)
-            log_step_end(6, "Generate Answer", "Answer generated", debug)
-            return output
+            return await self._call_openai_optimized("answer", messages, conversation_memory=conversation_memory)
             
         except Exception as e:
-            log_error("Generate Answer", str(e), debug)
-            raise
-    
-    async def optimize_semantic(self, question: str, conversation_memory: str = "") -> str:
+            raise Exception(f"Answer generation failed: {e}")
+
+    async def generate_answer_stream(
+        self, 
+        question: str, 
+        chunks: str, 
+        conversation_memory: str = "",
+        sse_manager=None,
+        session_id: str = None
+    ) -> AsyncGenerator[str, None]:
         """
-        Async wrapper for semantic optimization
+        Stream answer generation with real-time token output
         
         Args:
-            question: User's question to optimize
-            conversation_memory: Formatted conversation memory
-            
-        Returns:
-            str: Optimized question for semantic search
-        """
-        return self.execute_optimize_semantic(question, conversation_memory, debug=False)
-    
-    async def analyze_question(self, question: str, conversation_memory: str = "") -> str:
-        """
-        Async wrapper for question analysis
-        
-        Args:
-            question: User's question to analyze
-            conversation_memory: Formatted conversation memory
-            
-        Returns:
-            str: Analysis result for routing
-        """
-        return self.execute_analysis(question, conversation_memory, debug=False)
-    
-    async def extract_standard_numbers(self, question: str) -> List[str]:
-        """
-        Async wrapper for standard number extraction with multi-standard support
-        
-        Args:
-            question: User's question to extract standards from
-            
-        Returns:
-            List[str]: List of extracted standard numbers
-        """
-        result = self.execute_extract_standard(question, debug=False)
-        if isinstance(result, str) and result.strip():
-            # Split by comma and clean up each standard number
-            standards = [s.strip() for s in result.split(',') if s.strip()]
-            return standards
-        return []
-    
-    async def extract_from_memory(self, question: str, conversation_memory: str) -> List[str]:
-        """
-        Async wrapper for memory-based term extraction
-        
-        Args:
-            question: User's question to extract terms from
-            conversation_memory: Formatted conversation memory
-            
-        Returns:
-            List[str]: List of extracted terms from memory context
-        """
-        result = self.execute_extract_from_memory(question, conversation_memory, debug=False)
-        if isinstance(result, str) and result.strip():
-            # Split by comma and clean up each term
-            terms = [s.strip() for s in result.split(',') if s.strip()]
-            return terms
-        return []
-    
-    async def optimize_textual(self, question: str, conversation_memory: str = "") -> str:
-        """
-        Async wrapper for textual optimization
-        
-        Args:
-            question: User's question to optimize for textual search
-            conversation_memory: Formatted conversation memory
-            
-        Returns:
-            str: Optimized text for textual search
-        """
-        return self.execute_optimize_textual(question, conversation_memory, debug=False)
-    
-    async def generate_answer(self, question: str, chunks: str, conversation_memory: str = "") -> str:
-        """
-        Async wrapper for answer generation
-        
-        Args:
-            question: Original user question
+            question: User's original question
             chunks: Formatted chunks from Elasticsearch
             conversation_memory: Formatted conversation memory
-            
-        Returns:
-            str: Generated answer
-        """
-        return self.execute_answer(question, chunks, conversation_memory, debug=False)
-    
-    async def generate_answer_stream(self, question: str, chunks: str, conversation_memory: str = "", sse_manager=None, session_id: str = None) -> AsyncGenerator[str, None]:
-        """
-        Stream answer generation token by token
-        
-        Args:
-            question: Original user question
-            chunks: Formatted chunks from Elasticsearch
-            conversation_memory: Formatted conversation memory
-            sse_manager: SSE manager for sending progress updates
-            session_id: Session ID for SSE events
+            sse_manager: SSE manager for real-time updates
+            session_id: Session ID for SSE updates
             
         Yields:
-            str: Individual tokens from the answer
+            str: Individual tokens as they're generated
         """
-        from src.sse_manager import ProgressStage
-        
         try:
-            # Send progress update for answer generation start
-            if sse_manager and session_id:
-                sse_manager.send_progress(
-                    session_id, 
-                    ProgressStage.ANSWER_GENERATION, 
-                    "Genererer svar token for token...", 
-                    85, 
-                    "✨"
-                )
+            # Intelligent chunk truncation to avoid token limits
+            max_chunk_length = 15000  # Leave room for question and memory
+            if len(chunks) > max_chunk_length:
+                # Truncate but try to keep complete chunks
+                chunk_sections = chunks.split('\n\n')
+                truncated_chunks = []
+                current_length = 0
+                
+                for chunk in chunk_sections:
+                    if current_length + len(chunk) <= max_chunk_length:
+                        truncated_chunks.append(chunk)
+                        current_length += len(chunk)
+                    else:
+                        break
+                
+                chunks = '\n\n'.join(truncated_chunks)
+                if len(chunks) > max_chunk_length:
+                    chunks = chunks[:max_chunk_length] + "..."
             
             # Prepare prompt
             prompt_input = self.create_prompt_input(question, chunks=chunks, conversation_memory=conversation_memory)
             prompt_text = self.prompts["answer"].invoke(prompt_input).text
             
+            config = PROMPT_CONFIGS["answer"]
             messages = [
-                {"role": "system", "content": "You are a helpful assistant that answers questions based on provided document chunks. Answer in Norwegian."},
+                {"role": "system", "content": config.system_message},
                 {"role": "user", "content": prompt_text}
             ]
             
-            # Create streaming response
-            response = self.client.chat.completions.create(
-                model=OPENAI_MODEL_ANSWER,
+            # Use streaming OpenAI API
+            response = await self.client.chat.completions.create(
+                model=OPENAI_MODEL_DEFAULT,
                 messages=messages,
-                temperature=OPENAI_TEMPERATURE,
-                max_tokens=8000,
-                stream=True  # Enable streaming
+                temperature=config.temperature,
+                max_tokens=config.max_tokens,
+                stream=True
             )
             
-            full_answer = ""
-            token_count = 0
-            
-            # Stream tokens one by one
-            for chunk in response:
+            # Stream tokens
+            async for chunk in response:
                 if chunk.choices[0].delta.content is not None:
                     token = chunk.choices[0].delta.content
-                    full_answer += token
-                    token_count += 1
                     
                     # Send token via SSE if available
                     if sse_manager and session_id:
-                        sse_manager.send_token(session_id, token, is_final=False)
+                        sse_manager.send_token(session_id, token)
                     
-                    # Yield token for other consumers
                     yield token
-            
-            # Send final answer via SSE
-            if sse_manager and session_id:
-                sse_manager.send_final_answer(session_id, full_answer)
-                sse_manager.send_progress(
-                    session_id, 
-                    ProgressStage.COMPLETE, 
-                    f"Svar fullført! ({token_count} tokens)", 
-                    100, 
-                    "✅"
-                )
-            
+                    
         except Exception as e:
-            error_msg = f"Streaming answer generation failed: {str(e)}"
+            error_msg = f"Streaming answer generation failed: {e}"
             if sse_manager and session_id:
                 sse_manager.send_error(session_id, error_msg)
-            raise Exception(error_msg) 
+            raise Exception(error_msg)
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache performance statistics"""
+        total_requests = self.cache_stats["hits"] + self.cache_stats["misses"]
+        hit_rate = (self.cache_stats["hits"] / total_requests * 100) if total_requests > 0 else 0
+        
+        return {
+            "cache_entries": len(self.cache),
+            "total_requests": total_requests,
+            "cache_hits": self.cache_stats["hits"],
+            "cache_misses": self.cache_stats["misses"],
+            "expired_entries": self.cache_stats["expired"],
+            "hit_rate_percent": round(hit_rate, 2),
+            "top_cached_prompts": [
+                {
+                    "key": key[:8] + "...",
+                    "hits": entry.hits,
+                    "age_minutes": (datetime.now() - entry.created).total_seconds() / 60
+                }
+                for key, entry in sorted(
+                    self.cache.items(), 
+                    key=lambda x: x[1].hits, 
+                    reverse=True
+                )[:5]
+            ]
+        }
+
+    def clear_cache(self, older_than_hours: Optional[int] = None):
+        """Clear cache entries, optionally only older than specified hours"""
+        if older_than_hours is None:
+            self.cache.clear()
+            self.cache_stats = {"hits": 0, "misses": 0, "expired": 0}
+        else:
+            cutoff = datetime.now() - timedelta(hours=older_than_hours)
+            keys_to_remove = [
+                key for key, entry in self.cache.items()
+                if entry.created < cutoff
+            ]
+            for key in keys_to_remove:
+                del self.cache[key] 

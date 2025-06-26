@@ -885,61 +885,6 @@ def save_conversation_memory():
         app.logger.error(f"❌ MANUAL SAVE: Failed to save conversation memory: {e}")
         return jsonify({'error': f'Failed to save memory: {str(e)}'}), 500
 
-@app.route('/api/session/rebuild', methods=['POST'])
-def rebuild_conversation_memory():
-    """
-    Gjenoppbygg conversation memory fra eksisterende meldinger
-    Brukes når brukeren bytter til en eksisterende samtale
-    """
-    try:
-        data = request.get_json()
-        session_id = get_session_id(request)
-        
-        if not data or 'conversation_id' not in data or 'messages' not in data:
-            return jsonify({'error': 'Missing required fields: conversation_id, messages'}), 400
-        
-        conversation_id = data['conversation_id']
-        messages = data['messages']
-        
-        app.logger.info(f"🔄 REBUILD: Starting memory rebuild for conversation {conversation_id}")
-        app.logger.info(f"🔄 REBUILD: Session ID: {session_id}")
-        app.logger.info(f"🔄 REBUILD: Messages to rebuild: {len(messages)}")
-        
-        # Først, rydd eksisterende memory for denne sessionen
-        clear_conversation_memory(session_id)
-        
-        # Gjenoppbygg memory fra meldinger (bare de siste 5 for å ikke overfylle)
-        recent_messages = messages[-5:] if len(messages) > 5 else messages
-        
-        for msg in recent_messages:
-            if 'question' in msg and 'answer' in msg:
-                update_conversation_memory(session_id, msg['question'], msg['answer'])
-                app.logger.debug(f"🔄 REBUILD: Added exchange - Q: {msg['question'][:50]}...")
-        
-        # Hent den gjenoppbygde memoryen for bekreftelse
-        rebuilt_memory = get_conversation_memory(session_id)
-        
-        app.logger.info(f"✅ REBUILD: Memory rebuilt successfully for conversation {conversation_id}")
-        app.logger.info(f"✅ REBUILD: Rebuilt memory length: {len(rebuilt_memory)} chars")
-        app.logger.info(f"✅ REBUILD: Memory preview: {rebuilt_memory[:150]}...")
-        
-        return jsonify({
-            'success': True,
-            'session_id': session_id,
-            'conversation_id': conversation_id,
-            'messages_processed': len(recent_messages),
-            'memory_length': len(rebuilt_memory),
-            'memory_preview': rebuilt_memory[:200] + '...' if len(rebuilt_memory) > 200 else rebuilt_memory,
-            'message': 'Conversation memory rebuilt successfully'
-        })
-        
-    except Exception as e:
-        app.logger.error(f"❌ REBUILD: Failed to rebuild conversation memory: {e}")
-        import traceback
-        app.logger.error(f"❌ REBUILD: Traceback: {traceback.format_exc()}")
-        return jsonify({'error': f'Failed to rebuild memory: {str(e)}'}), 500
-
-
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 errors"""
@@ -963,39 +908,26 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
-    # Sørg for at AI-titler er initialisert
-    try:
-        from src.session_manager import session_manager
-        if session_manager.ai_titles_enabled:
-            app.logger.info("✅ AI-genererte samtale-titler aktivert i produksjon")
-        else:
-            app.logger.info("⚠️ AI-titler ikke aktivert - bruker fallback-metoder")
-    except Exception as e:
-        app.logger.warning(f"⚠️ Kunne ikke sjekke AI-titler status: {e}")
-    
-    # Railway og produksjon konfigurasjon
+    # Development server
     port = int(os.environ.get('PORT', 5000))
-    host = os.environ.get('HOST', '0.0.0.0')
+    debug = os.environ.get('FLASK_ENV') == 'development'
     
-    # Detekter Railway miljø
-    is_railway = os.environ.get('RAILWAY_ENVIRONMENT') is not None
-    is_production = app.config.get('FLASK_ENV') == 'production'
+    app.logger.info(f"🚀 Starting StandardGPT on port {port} (debug={debug})")
+    app.logger.info(f"🔧 Configuration: {config_class.__name__}")
     
-    if is_railway:
-        app.logger.info(f"🚄 Kjører på Railway - Port: {port}")
-        app.logger.info(f"🤖 AI-titler: {'Aktivert' if session_manager.ai_titles_enabled else 'Fallback-modus'}")
-    
-    if is_production and not is_railway:
-        # Bruk Gunicorn for produksjon (ikke Railway)
-        app.logger.info("🚀 Produksjonsmodus - bruk Gunicorn for beste ytelse")
-        app.logger.info(f"Eksempel: gunicorn --bind {host}:{port} --workers 4 app:app")
+    if flow_manager:
+        app.logger.info("🔍 FlowManager: Connected")
     else:
-        # Development eller Railway (Railway håndterer Gunicorn automatisk)
-        app.run(host=host, port=port, debug=False)
+        app.logger.warning("⚠️ FlowManager: Disconnected")
     
-    # Log konfigurasjon
-    app.logger.info(f"🌐 Server kjører på http://{host}:{port}")
     if app.config.get('OPENAI_API_KEY'):
-        app.logger.info("🤖 OpenAI: Konfigurert")
+        app.logger.info("🤖 OpenAI: Configured")
     else:
-        app.logger.warning("⚠️ OpenAI: Ikke konfigurert") 
+        app.logger.warning("⚠️ OpenAI: Not configured")
+    
+    app.run(
+        host='0.0.0.0',
+        port=port,
+        debug=debug,
+        threaded=True
+    ) 
