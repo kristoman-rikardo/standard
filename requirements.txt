@@ -26,6 +26,12 @@ langchain-openai>=0.0.1,<0.2.0
 requests==2.31.0
 urllib3==2.1.0
 
+# Async HTTP client for prompt manager
+aiohttp==3.9.5
+
+# Numerical computing for embeddings
+numpy==1.24.3
+
 # Rate limiting
 Flask-Limiter==3.5.0
 
