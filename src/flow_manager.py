@@ -302,11 +302,18 @@ class FlowManager:
             
             # Get embeddings for routes that use vector search
             if route in ["without", "personal", "including", "memory"]:
-                embeddings = self.elasticsearch_client.get_embeddings_from_api(optimized, debug)
-                if embeddings:
-                    debug_output.append(f"✅ Embeddings generated for '{route}' route: {len(embeddings)} dimensions")
-                else:
-                    debug_output.append(f"⚠️ Embeddings failed for '{route}' route - falling back to text-only search")
+                try:
+                    embeddings = self.elasticsearch_client.get_embeddings_from_api(optimized, debug)
+                    if embeddings and len(embeddings) > 0:
+                        debug_output.append(f"✅ Embeddings generated for '{route}' route: {len(embeddings)} dimensions")
+                    else:
+                        debug_output.append(f"⚠️ Embeddings returned empty for '{route}' route - continuing with text-only search")
+                        embeddings = None
+                except Exception as e:
+                    debug_output.append(f"⚠️ Embeddings failed for '{route}' route: {str(e)} - continuing with text-only search")
+                    embeddings = None
+                    if debug:
+                        print(f"⚠️ Embedding error: {e}")
             else:
                 debug_output.append(f"✅ Skipping embeddings for '{route}' route (not needed)")
             

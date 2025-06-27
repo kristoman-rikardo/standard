@@ -8,6 +8,7 @@ class StandardGPTApp {
         this.currentRequest = null;
         this.isLoading = false;
         this.debugVisible = true;
+        this.sessionId = this.getOrCreateSessionId();
         
         // DOM Elements
         this.elements = {
@@ -190,6 +191,7 @@ class StandardGPTApp {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'X-Session-ID': this.sessionId
                 },
                 body: JSON.stringify({ question }),
                 signal: controller.signal
@@ -452,11 +454,15 @@ class StandardGPTApp {
     clearAll() {
         this.elements.questionInput.value = '';
         this.hideResults();
-        this.validateInput();
+        this.elements.debugContent.innerHTML = '';
+        this.elements.answerContent.innerHTML = '';
         this.focusInput();
         
-        // Reset textarea height
-        this.elements.questionInput.style.height = 'auto';
+        // Cancel any ongoing request
+        this.cancelRequest();
+        
+        // Announce to screen readers
+        this.announceToScreenReader('Innhold ryddet');
     }
     
     focusInput() {
@@ -480,6 +486,39 @@ class StandardGPTApp {
         setTimeout(() => {
             document.body.removeChild(announcement);
         }, 1000);
+    }
+    
+    getOrCreateSessionId() {
+        let sessionId = localStorage.getItem('standardgpt_session_id');
+        if (!sessionId) {
+            sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+            localStorage.setItem('standardgpt_session_id', sessionId);
+        }
+        console.log('Session ID:', sessionId);
+        return sessionId;
+    }
+    
+    clearSession() {
+        localStorage.removeItem('standardgpt_session_id');
+        this.sessionId = this.getOrCreateSessionId();
+        console.log('New session created:', this.sessionId);
+    }
+    
+    // NY: Metode for ny samtale (clear session)
+    startNewConversation() {
+        this.clearAll();
+        this.clearSession();
+        
+        // Send signal til backend om å cleare session
+        fetch('/api/session/clear', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-ID': this.sessionId
+            }
+        }).catch(console.error);
+        
+        this.announceToScreenReader('Ny samtale startet');
     }
 }
 

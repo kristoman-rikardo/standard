@@ -194,18 +194,26 @@ class ElasticsearchClient:
                         debug_print("Embeddings", f"Invalid vector format received: {type(vectors)}")
                     return None
             else:
+                error_text = response.text[:200] if response.text else "No error message"
                 if debug:
-                    debug_print("Embeddings", f"API error: {response.status_code} - {response.text[:200]}")
-                return None
+                    debug_print("Embeddings", f"API error: {response.status_code} - {error_text}")
+                raise Exception(f"Embedding API returned {response.status_code}: {error_text}")
                 
         except requests.exceptions.Timeout:
+            error_msg = "API request timed out (30s)"
             if debug:
-                debug_print("Embeddings", "API request timed out")
-            return None
+                debug_print("Embeddings", error_msg)
+            raise Exception(error_msg)
+        except requests.exceptions.ConnectionError as e:
+            error_msg = f"Connection error: {str(e)}"
+            if debug:
+                debug_print("Embeddings", error_msg)
+            raise Exception(error_msg)
         except Exception as e:
+            error_msg = f"API request failed: {str(e)}"
             if debug:
-                debug_print("Embeddings", f"API request failed: {str(e)}")
-            return None
+                debug_print("Embeddings", error_msg)
+            raise e
 
     def batch_embeddings(self, texts: List[str], debug: bool = True) -> List[Optional[List[float]]]:
         """

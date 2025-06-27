@@ -586,15 +586,35 @@ def clear_cache():
 
 @app.route('/api/session/clear', methods=['POST'])
 def clear_session():
-    """Clear conversation memory for specific session"""
-    session_id = get_session_id(request)
-    clear_conversation_memory(session_id)
-    
-    return jsonify({
-        'message': 'Session memory cleared successfully',
-        'session_id': session_id,
-        'timestamp': datetime.utcnow().isoformat()
-    })
+    """Clear conversation memory for the current session - ROBUST VERSION"""
+    try:
+        # Get session ID from header eller fra request body
+        session_id = request.headers.get('X-Session-ID')
+        if not session_id:
+            data = request.get_json() or {}
+            session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({'error': 'No session ID provided'}), 400
+        
+        # Clear session memory (don't fail if session doesn't exist)
+        cleared = False
+        if session_id in conversation_sessions:
+            clear_conversation_memory(session_id)
+            cleared = True
+        
+        app.logger.info(f"🧹 Session memory clear requested for {session_id} - {'cleared' if cleared else 'not found (OK)'}")
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'was_cleared': cleared,
+            'message': 'Session memory cleared successfully' if cleared else 'Session not found (clean slate)'
+        })
+        
+    except Exception as e:
+        app.logger.error(f"❌ Error clearing session: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/session/stats')
