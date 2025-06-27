@@ -371,7 +371,7 @@ class ElasticsearchClient:
                 headers=self.headers,
                 json=query_object,
                 auth=self.auth,  # Fallback for basic auth
-                timeout=30
+                timeout=60
             )
             
             # Check response status

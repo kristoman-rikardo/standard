@@ -510,8 +510,16 @@
                 
                 <!-- PROGRESS INDICATOR -->
                 <div class="progress-container" id="progress-container">
+                    <div style="display: flex; align-items: center; gap: 12px; padding: 8px 0;">
+                        <div style="font-size: 18px; min-width: 24px;">⚡</div>
+                        <div id="progress-message" style="flex: 1; font-size: 14px; color: #6b7280;">Behandler spørsmål...</div>
+                        <div style="width: 100px; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden;">
+                            <div id="progress-bar" style="height: 100%; background: #22c55e; border-radius: 3px; width: 0%; transition: width 0.3s ease;"></div>
+                        </div>
+                        <div style="font-size: 12px; color: #9ca3af;">0%</div>
+                    </div>
                     <div id="progress-items">
-                        <!-- Dynamisk innhold -->
+                        <!-- Dynamisk innhold for detaljert progress -->
                     </div>
                 </div>
                 
@@ -1002,9 +1010,21 @@
                 progressContainer.style.display = 'block';
                 progressMessage.textContent = message;
                 progressBar.style.width = progress + '%';
+                
+                // NYTT: Oppdater også prosent-visningen
+                const progressPercent = progressContainer.querySelector('div[style*="font-size: 12px"]');
+                if (progressPercent) {
+                    progressPercent.textContent = Math.round(progress) + '%';
+                }
+                
                 console.log(`✅ Progress shown: "${message}" at ${progress}%`);
             } else {
                 console.error('❌ Progress elements not found!');
+                console.error('❌ Details:', {
+                    container: progressContainer,
+                    message: progressMessage,
+                    bar: progressBar
+                });
             }
         }
         
