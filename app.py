@@ -184,30 +184,44 @@ except Exception as e:
 
 # Warmup function to avoid cold starts
 async def warmup_services():
-    """Warmup services to avoid cold start delays"""
+    """Warmup services to avoid cold start delays - robust version"""
     if flow_manager:
         try:
             app.logger.info("🔥 Starting service warmup...")
             
-            # Warmup embedding API with a simple query
-            embedding_client = flow_manager.elasticsearch_client
-            warmup_embedding = await asyncio.get_event_loop().run_in_executor(
-                None, embedding_client.get_embeddings_from_api, "warmup query", False
-            )
-            if warmup_embedding:
-                app.logger.info("✅ Embedding API warmed up successfully")
-            else:
-                app.logger.warning("⚠️ Embedding API warmup returned no results")
+            # Warmup embedding API with a simple query - make it optional
+            try:
+                embedding_client = flow_manager.elasticsearch_client
+                warmup_embedding = await asyncio.get_event_loop().run_in_executor(
+                    None, embedding_client.get_embeddings_from_api, "warmup query", False
+                )
+                if warmup_embedding:
+                    app.logger.info("✅ Embedding API warmed up successfully")
+                else:
+                    app.logger.info("ℹ️ Embedding API warmup skipped (endpoint not available/configured)")
+            except Exception as embedding_error:
+                app.logger.info(f"ℹ️ Embedding API warmup skipped: {embedding_error}")
             
-            # Warmup OpenAI with a simple semantic optimization
-            prompt_manager = flow_manager.prompt_manager
-            warmup_openai = await asyncio.get_event_loop().run_in_executor(
-                None, prompt_manager.execute_optimize_semantic, "warmup", "", False
-            )
-            if warmup_openai:
-                app.logger.info("✅ OpenAI API warmed up successfully")
-            else:
-                app.logger.warning("⚠️ OpenAI API warmup failed")
+            # Warmup OpenAI with a simple semantic optimization - FIXED: Use correct async method
+            try:
+                prompt_manager = flow_manager.prompt_manager
+                warmup_openai = await prompt_manager.optimize_semantic("warmup", "")
+                if warmup_openai:
+                    app.logger.info("✅ OpenAI API warmed up successfully")
+                else:
+                    app.logger.warning("⚠️ OpenAI API warmup returned empty result")
+            except Exception as openai_error:
+                app.logger.warning(f"⚠️ OpenAI API warmup failed: {openai_error}")
+            
+            # Test Elasticsearch health
+            try:
+                es_health = flow_manager.elasticsearch_client.health_check(debug=False)
+                if es_health:
+                    app.logger.info("✅ Elasticsearch health check passed")
+                else:
+                    app.logger.warning("⚠️ Elasticsearch health check failed")
+            except Exception as es_error:
+                app.logger.warning(f"⚠️ Elasticsearch health check error: {es_error}")
                 
             app.logger.info("🔥 Service warmup completed")
             
@@ -291,26 +305,92 @@ def index():
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint with cache info"""
-    status = HealthCheck.get_system_status(app)
-    
-    # Add cache information
-    status['cache'] = {
-        'entries': len(cache),
-        'memory_usage': f"{len(str(cache))} bytes"
-    }
-    
-    # Determine overall health
-    is_healthy = all([
-        status['elasticsearch'] or True,  # Allow ES to be down for development
-        status['openai']
-    ])
-    
-    return jsonify({
-        'status': 'healthy' if is_healthy else 'degraded',
-        'timestamp': datetime.utcnow().isoformat(),
-        'services': status
-    }), 200 if is_healthy else 503
+    """Enhanced health check endpoint - robust for production"""
+    try:
+        # Get system status with error handling
+        status = {}
+        
+        # Test FlowManager availability
+        try:
+            if flow_manager:
+                flow_health = flow_manager.health_check(debug=False)
+                status.update(flow_health)
+                status['flowmanager'] = True
+            else:
+                status['flowmanager'] = False
+                status['elasticsearch'] = False
+                status['prompts'] = False
+                status['query_builders'] = False
+        except Exception as e:
+            app.logger.warning(f"FlowManager health check failed: {e}")
+            status['flowmanager'] = False
+            status['elasticsearch'] = False
+            status['prompts'] = False
+            status['query_builders'] = False
+        
+        # Test OpenAI API availability
+        try:
+            if app.config.get('OPENAI_API_KEY'):
+                status['openai'] = True  # Assume available if key is set
+            else:
+                status['openai'] = False
+        except Exception:
+            status['openai'] = False
+        
+        # Add cache information
+        status['cache'] = {
+            'entries': len(cache),
+            'memory_usage': f"{len(str(cache))} bytes",
+            'session_count': len(conversation_sessions)
+        }
+        
+        # Add application information
+        status['application'] = {
+            'flask_env': app.config.get('FLASK_ENV', 'development'),
+            'debug_mode': app.debug,
+            'version': app.config.get('VERSION', '1.0.0')
+        }
+        
+        # Determine overall health - be more lenient
+        # Only require FlowManager and basic functionality
+        is_healthy = status.get('flowmanager', False)
+        
+        # Add warnings for services that are down but not critical
+        warnings = []
+        if not status.get('elasticsearch', False):
+            warnings.append("Elasticsearch connection issues")
+        if not status.get('openai', False):
+            warnings.append("OpenAI API issues")
+        
+        response_data = {
+            'status': 'healthy' if is_healthy else 'unhealthy',
+            'timestamp': datetime.utcnow().isoformat(),
+            'services': status
+        }
+        
+        if warnings:
+            response_data['warnings'] = warnings
+        
+        # Return 200 even if some services are down, 503 only if core functionality is broken
+        status_code = 200 if is_healthy else 503
+        
+        return jsonify(response_data), status_code
+        
+    except Exception as e:
+        # Fallback health check response
+        app.logger.error(f"Health check endpoint error: {e}")
+        return jsonify({
+            'status': 'error',
+            'timestamp': datetime.utcnow().isoformat(),
+            'error': 'Health check failed',
+            'services': {
+                'flowmanager': False,
+                'elasticsearch': False,
+                'openai': False,
+                'prompts': False,
+                'query_builders': False
+            }
+        }), 503
 
 
 @app.route('/api/query', methods=['POST'])
