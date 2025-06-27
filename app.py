@@ -694,27 +694,34 @@ def api_query_stream():
             app.logger.error(f"❌ STREAM API: Failed to import SSE manager: {e}")
             return jsonify({'error': f'SSE manager not available: {e}'}), 503
         
-        # Generer session ID
-        session_id = f"stream_{int(time.time())}_{str(uuid.uuid4())[:8]}"
-        app.logger.info(f"🔑 STREAM API: Generated session ID: {session_id}")
+        # VIKTIG: Bruk SAMME session ID fra frontend for memory continuity
+        frontend_session_id = get_session_id(request)
+        if not frontend_session_id or frontend_session_id == 'default':
+            # Generate new session if none provided
+            frontend_session_id = f"session_{int(time.time())}_{str(uuid.uuid4())[:8]}"
+        
+        # For SSE, generer separat stream session ID
+        stream_session_id = f"sse_{int(time.time())}_{str(uuid.uuid4())[:8]}"
+        
+        app.logger.info(f"🔑 STREAM API: Frontend session ID: {frontend_session_id}")
+        app.logger.info(f"🔑 STREAM API: Stream session ID: {stream_session_id}")
         
         # Opprett SSE session
         try:
-            sse_manager.create_session(session_id)
-            app.logger.info(f"✅ STREAM API: SSE session created: {session_id}")
+            sse_manager.create_session(stream_session_id)
+            app.logger.info(f"✅ STREAM API: SSE session created: {stream_session_id}")
         except Exception as e:
             app.logger.error(f"❌ STREAM API: Failed to create SSE session: {e}")
             return jsonify({'error': f'Failed to create session: {e}'}), 500
         
-        # Get conversation memory using frontend session ID, not the new stream session
-        frontend_session_id = get_session_id(request)
+        # Get conversation memory using frontend session ID
         conversation_memory = get_conversation_memory(frontend_session_id)
         app.logger.info(f"🧠 STREAM API: Using frontend session ID for memory: {frontend_session_id}")
         app.logger.info(f"🧠 STREAM API: Conversation memory length: {len(conversation_memory)}")
         
         # Start async processing i bakgrunnen med threading
         def process_async():
-            app.logger.info(f"🔄 ASYNC: Starting processing for session {session_id}")
+            app.logger.info(f"🔄 ASYNC: Starting processing for stream session {stream_session_id}")
             
             # FORBEDRET: Proper Flask app context management
             with app.app_context():
@@ -723,60 +730,60 @@ def api_query_stream():
                     
                     # Sjekk at FlowManager er tilgjengelig
                     if not flow_manager:
-                        app.logger.error(f"❌ ASYNC: FlowManager not available for session {session_id}")
-                        sse_manager.send_error(session_id, "FlowManager ikke initialisert")
+                        app.logger.error(f"❌ ASYNC: FlowManager not available for session {stream_session_id}")
+                        sse_manager.send_error(stream_session_id, "FlowManager ikke initialisert")
                         return
                     
-                    app.logger.info(f"🔄 ASYNC: FlowManager available for session {session_id}")
+                    app.logger.info(f"🔄 ASYNC: FlowManager available for session {stream_session_id}")
                     app.logger.info(f"🔄 ASYNC: Frontend session ID: {frontend_session_id}")
                     app.logger.info(f"🔄 ASYNC: Question: {query_req.question}")
                     
                     # Create new event loop for this thread
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                    app.logger.info(f"🔄 ASYNC: Created event loop for session {session_id}")
+                    app.logger.info(f"🔄 ASYNC: Created event loop for session {stream_session_id}")
                     
                     # Sett timeout for hele prosessen (maksimum 45 sekunder for komplekse spørsmål)
                     try:
-                        app.logger.info(f"🔄 ASYNC: Starting flow_manager.process_query_with_sse for session {session_id}")
+                        app.logger.info(f"🔄 ASYNC: Starting flow_manager.process_query_with_sse for session {stream_session_id}")
                         
                         result = asyncio.wait_for(
                             flow_manager.process_query_with_sse(
                                 query_req.question, 
                                 conversation_memory, 
-                                session_id, 
+                                stream_session_id, 
                                 debug_enabled
                             ),
                             timeout=45.0  # Økt til 45 sekunder for komplekse spørsmål
                         )
                         result = loop.run_until_complete(result)
                         
-                        app.logger.info(f"✅ ASYNC: Process completed successfully for session {session_id}")
+                        app.logger.info(f"✅ ASYNC: Process completed successfully for session {stream_session_id}")
                         app.logger.info(f"✅ ASYNC: Result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
                         app.logger.info(f"✅ ASYNC: Answer length: {len(result.get('answer', '')) if isinstance(result, dict) else 'N/A'}")
                         
                     except asyncio.TimeoutError:
                         error_msg = "Prosesseringen tok for lang tid. Prøv med et enklere spørsmål."
-                        app.logger.error(f"⏰ ASYNC: Processing timeout for session {session_id}")
-                        sse_manager.send_error(session_id, error_msg)
+                        app.logger.error(f"⏰ ASYNC: Processing timeout for session {stream_session_id}")
+                        sse_manager.send_error(stream_session_id, error_msg)
                         return
                     except Exception as processing_error:
                         error_msg = f"Feil under behandling: {str(processing_error)}"
-                        app.logger.error(f"❌ ASYNC: Processing error for session {session_id}: {processing_error}")
+                        app.logger.error(f"❌ ASYNC: Processing error for session {stream_session_id}: {processing_error}")
                         app.logger.error(f"❌ ASYNC: Processing error traceback:")
                         import traceback
                         app.logger.error(traceback.format_exc())
-                        sse_manager.send_error(session_id, error_msg)
+                        sse_manager.send_error(stream_session_id, error_msg)
                         return
                     finally:
                         try:
                             loop.close()
-                            app.logger.info(f"🔄 ASYNC: Event loop closed for session {session_id}")
+                            app.logger.info(f"🔄 ASYNC: Event loop closed for session {stream_session_id}")
                         except Exception as loop_error:
-                            app.logger.warning(f"⚠️ ASYNC: Error closing loop for session {session_id}: {loop_error}")
+                            app.logger.warning(f"⚠️ ASYNC: Error closing loop for session {stream_session_id}: {loop_error}")
                     
                     processing_time = time.time() - start_processing_time
-                    app.logger.info(f"✅ ASYNC: Processing completed for session {session_id} in {processing_time:.2f}s")
+                    app.logger.info(f"✅ ASYNC: Processing completed for session {stream_session_id} in {processing_time:.2f}s")
                     
                     # FORBEDRET: Simplified memory saving logic
                     has_valid_question = query_req and query_req.question and len(query_req.question.strip()) > 0
@@ -790,19 +797,29 @@ def api_query_stream():
                     
                     if should_save_memory:
                         try:
-                            # Lagre til database
+                            # VIKTIG: Lagre til database med conversation_id hvis tilgjengelig
+                            conversation_id = data.get('conversation_id')  # Fra frontend request
+                            
                             from src.session_manager import session_manager
                             
-                            new_conversation_id = session_manager.save_interaction(
-                                query_req.question, 
-                                result['answer'],
-                                conversation_id=query_req.conversation_id  # Bruk eksisterende hvis tilgjengelig
-                            )
-                            
-                            if new_conversation_id:
+                            if conversation_id:
+                                # Legg til i eksisterende samtale
+                                app.logger.info(f"💾 ASYNC: Adding to existing conversation {conversation_id}")
+                                session_manager.add_to_conversation(
+                                    conversation_id,
+                                    query_req.question, 
+                                    result['answer']
+                                )
+                            else:
+                                # Opprett ny samtale
+                                app.logger.info(f"💾 ASYNC: Creating new conversation")
+                                new_conversation_id = session_manager.save_interaction(
+                                    query_req.question, 
+                                    result['answer']
+                                )
                                 app.logger.info(f"✅ ASYNC: Created new conversation {new_conversation_id}")
                             
-                            # VIKTIG: Oppdater conversation memory - dette skjer nå også i frontend
+                            # VIKTIG: Oppdater conversation memory - bruk frontend session ID!
                             app.logger.info(f"🧠 ASYNC: Updating conversation memory for frontend session {frontend_session_id}")
                             app.logger.info(f"🧠 ASYNC: Memory before update: {len(get_conversation_memory(frontend_session_id))} chars")
                             
@@ -822,38 +839,38 @@ def api_query_stream():
                             import traceback
                             app.logger.error(f"⚠️ ASYNC: Save error traceback: {traceback.format_exc()}")
                     else:
-                        app.logger.warning(f"⚠️ ASYNC: Skipping memory save for session {session_id}")
+                        app.logger.warning(f"⚠️ ASYNC: Skipping memory save for session {stream_session_id}")
                         app.logger.warning(f"⚠️ ASYNC: Reason - has_valid_question: {has_valid_question}, has_some_answer: {has_some_answer}")
                     
                 except Exception as e:
-                    app.logger.error(f"❌ ASYNC: Unexpected error for session {session_id}: {e}")
+                    app.logger.error(f"❌ ASYNC: Unexpected error for session {stream_session_id}: {e}")
                     import traceback
                     app.logger.error(f"❌ ASYNC: Full traceback: {traceback.format_exc()}")
-                    sse_manager.send_error(session_id, f"Uventet feil: {str(e)}")
+                    sse_manager.send_error(stream_session_id, f"Uventet feil: {str(e)}")
                 finally:
-                    app.logger.info(f"🏁 ASYNC: Thread completed for session {session_id}")
+                    app.logger.info(f"🏁 ASYNC: Thread completed for session {stream_session_id}")
         
         # Start processing i bakgrunnstråd med daemon=False for robusthet
         import threading
         processing_thread = threading.Thread(
             target=process_async, 
             daemon=False,  # Ikke daemon for å sikre fullføring
-            name=f"ProcessingThread-{session_id}"
+            name=f"ProcessingThread-{stream_session_id}"
         )
         processing_thread.start()
-        app.logger.info(f"🚀 STREAM API: Started background processing thread for session {session_id}")
+        app.logger.info(f"🚀 STREAM API: Started background processing thread for session {stream_session_id}")
         
-        # FIXED: Return frontend session_id for conversation memory continuity
+        # Return frontend session_id for conversation memory continuity
         response_data = {
-            'session_id': frontend_session_id,  # Return frontend session_id instead of stream session_id
-            'stream_session_id': session_id,    # Keep stream session for SSE functionality
-            'stream_url': f'/api/stream/{session_id}',
+            'session_id': frontend_session_id,  # Return frontend session_id for memory continuity
+            'stream_session_id': stream_session_id,    # Stream session for SSE functionality
+            'stream_url': f'/api/stream/{stream_session_id}',
             'status': 'started',
             'debug': debug_enabled
         }
         
         app.logger.info(f"✅ STREAM API: Returning response: {response_data}")
-        app.logger.info(f"🔑 STREAM API: Frontend session_id: {frontend_session_id}, Stream session_id: {session_id}")
+        app.logger.info(f"🔑 STREAM API: Frontend session_id: {frontend_session_id}, Stream session_id: {stream_session_id}")
         return jsonify(response_data)
         
     except Exception as e:

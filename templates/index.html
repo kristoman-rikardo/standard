@@ -643,13 +643,21 @@
             
             try {
                 console.log('🚀 Sending question:', question);
+                console.log('🆔 Using session ID:', currentSessionId);
+                
+                // VIKTIG: Sørg for at vi alltid har en session ID
+                if (!currentSessionId) {
+                    currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+                    localStorage.setItem('standardgpt_session_id', currentSessionId);
+                    console.log('🆔 Generated new session ID:', currentSessionId);
+                }
                 
                 // Start streaming request
                 const response = await fetch('/api/query/stream', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Session-ID': currentSessionId || 'default'
+                        'X-Session-ID': currentSessionId
                     },
                     body: JSON.stringify({
                         question: question,
@@ -669,11 +677,11 @@
                 const data = await response.json();
                 console.log('✅ Stream response data:', data);
                 
-                // Only update session ID if we don't have one, or server explicitly gives us a new one
-                if (!currentSessionId || data.session_id !== currentSessionId) {
+                // VIKTIG: Oppdater session ID fra server response for å sikre kontinuitet
+                if (data.session_id && data.session_id !== currentSessionId) {
+                    console.log('🆔 Server updated session ID from', currentSessionId, 'to', data.session_id);
                     currentSessionId = data.session_id;
                     localStorage.setItem('standardgpt_session_id', currentSessionId);
-                    console.log('🆔 Updated session ID:', currentSessionId);
                 }
                 
                 // Start listening to SSE stream
@@ -874,6 +882,15 @@
             
             try {
                 console.log('🔄 Fallback: Using sync API for question:', question.substring(0, 50) + '...');
+                console.log('🔄 Fallback: Using session ID:', currentSessionId);
+                
+                // VIKTIG: Sørg for at vi har session ID også i fallback
+                if (!currentSessionId) {
+                    currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+                    localStorage.setItem('standardgpt_session_id', currentSessionId);
+                    console.log('🆔 Fallback: Generated new session ID:', currentSessionId);
+                }
+                
                 showProgress();
                 updateProgress('fallback', 'Bruker alternativ tilkobling...', '🔄', 50);
                 
@@ -881,7 +898,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Session-ID': currentSessionId || 'default'
+                        'X-Session-ID': currentSessionId
                     },
                     body: JSON.stringify({
                         question: question,

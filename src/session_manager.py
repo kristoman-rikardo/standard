@@ -374,6 +374,10 @@ Tittel:"""
                 WHERE id = ?
             """, (conversation_id,))
     
+    def add_to_conversation(self, conversation_id: str, question: str, answer: str):
+        """Alias for add_message_to_conversation - for konsistens med app.py"""
+        return self.add_message_to_conversation(conversation_id, question, answer)
+    
     def get_conversation_history(self, limit: int = 50) -> List[Conversation]:
         """Hent samtalehistorikk sortert etter dato"""
         with sqlite3.connect(self.db_path) as conn:
