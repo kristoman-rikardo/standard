@@ -26,10 +26,8 @@ WORKDIR /app
 # Kopier requirements først for bedre Docker layer caching
 COPY requirements.txt .
 
-# CRITICAL FIX: Install httpx first to avoid proxies conflict
+# SIMPLIFIED: Single step installation - no duplicates, dependencies ordered in requirements.txt
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir "httpx==0.27.2" "httpcore==1.0.7" "h11==0.14.0" && \
-    pip install --no-cache-dir "openai==1.57.0" && \
     pip install --no-cache-dir -r requirements.txt
 
 # Kopier applikasjonskode
@@ -39,12 +37,12 @@ COPY . .
 RUN mkdir -p logs static/css static/js static/img && \
     chmod -R 755 /app
 
-# Railway bruker automatisk PORT miljøvariabel, men vi setter en fallback
+# Railway bruker automatisk PORT miljøvariabel
 EXPOSE 5000
 
 # Health check tilpasset Railway
 HEALTHCHECK --interval=30s --timeout=15s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
 
-# Railway start kommando - bruk fast port som Railway mapper
-CMD gunicorn --bind 0.0.0.0:5000 --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-120} --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --preload --access-logfile - --error-logfile - app:app 
+# Railway start kommando
+CMD gunicorn --bind 0.0.0.0:5000 --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-120} --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --preload --access-logfile - --error-logfile - app:app
