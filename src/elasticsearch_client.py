@@ -17,7 +17,8 @@ from src.config import (
     ELASTICSEARCH_USER,
     ELASTICSEARCH_PASSWORD,
     EMBEDDING_API_ENDPOINT,
-    EMBEDDING_API_KEY
+    EMBEDDING_API_KEY,
+    OPENAI_API_KEY
 )
 from src.debug_utils import log_step_start, log_step_end, log_error, debug_print
 
@@ -105,10 +106,9 @@ class ElasticsearchClient:
         Returns:
             list: Embeddings vector or None if failed
         """
-        if not EMBEDDING_API_ENDPOINT:
-            if debug:
-                debug_print("Embeddings", "EMBEDDING_API_ENDPOINT not configured, skipping embeddings")
-            return None
+        # Check if we should use internal embeddings (OpenAI) instead of external API
+        if not EMBEDDING_API_ENDPOINT or EMBEDDING_API_ENDPOINT == "INTERNAL":
+            return self._generate_internal_embeddings(text, debug)
         
         # Generate cache key
         text_hash = hashlib.md5(text.encode()).hexdigest()
@@ -127,93 +127,181 @@ class ElasticsearchClient:
             else:
                 # Remove expired entry
                 del embedding_cache[text_hash]
-        
+
         if debug:
             debug_print("Embeddings", f"Cache MISS for text hash: {text_hash[:8]}...")
         
         # Determine API type
         is_local_api = "127.0.0.1" in EMBEDDING_API_ENDPOINT or "localhost" in EMBEDDING_API_ENDPOINT
         
-        try:
-            # Prepare request data
-            payload = {"text": text}
+        # Try external API with multiple attempts and increasing timeouts
+        max_retries = 3
+        timeouts = [30, 45, 60]  # Progressive timeouts for Railway stability
+        
+        for attempt in range(max_retries):
+            try:
+                # Prepare request data
+                payload = {"text": text}
+                
+                # Setup headers for request
+                request_headers = {"Content-Type": "application/json"}
+                if EMBEDDING_API_KEY and not is_local_api:
+                    request_headers["Authorization"] = f"Bearer {EMBEDDING_API_KEY}"
+                
+                if debug:
+                    api_type = "LOKAL" if is_local_api else "EKSTERN"
+                    debug_print("Embeddings", f"Attempt {attempt + 1}/{max_retries}: Calling {api_type} API: {EMBEDDING_API_ENDPOINT}")
+                    debug_print("Embeddings", f"Timeout: {timeouts[attempt]}s")
+                
+                # Make API request with progressive timeout
+                response = requests.post(
+                    EMBEDDING_API_ENDPOINT,
+                    headers=request_headers,
+                    json=payload,
+                    timeout=timeouts[attempt]
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    # Extract vectors based on API response format
+                    if "vectors" in data and data["vectors"]:
+                        # Multiple vectors format
+                        vectors = data["vectors"][0]
+                    elif "vector" in data:
+                        # Single vector format
+                        vectors = data["vector"]
+                    elif "data" in data and data["data"]:
+                        # OpenAI-style format
+                        vectors = data["data"][0]["embedding"]
+                    else:
+                        # Direct vector format
+                        vectors = data
+                    
+                    # Validate vector format
+                    if isinstance(vectors, list) and len(vectors) > 0:
+                        # Cache the result with enhanced metadata
+                        cache_entry = EmbeddingCacheEntry(
+                            vector=vectors,
+                            dimensions=len(vectors)
+                        )
+                        embedding_cache[text_hash] = cache_entry
+                        
+                        if debug:
+                            debug_print("Embeddings", f"External API success on attempt {attempt + 1}: {len(vectors)} dimensional vector (cached)")
+                        
+                        return vectors
+                    else:
+                        if debug:
+                            debug_print("Embeddings", f"Invalid vector format received: {type(vectors)}")
+                        continue  # Try next attempt
+                else:
+                    error_text = response.text[:200] if response.text else "No error message"
+                    if debug:
+                        debug_print("Embeddings", f"API error on attempt {attempt + 1}: {response.status_code} - {error_text}")
+                    if attempt == max_retries - 1:  # Last attempt
+                        raise Exception(f"Embedding API returned {response.status_code}: {error_text}")
+                        
+            except requests.exceptions.Timeout:
+                error_msg = f"API request timed out ({timeouts[attempt]}s) on attempt {attempt + 1}"
+                if debug:
+                    debug_print("Embeddings", error_msg)
+                if attempt == max_retries - 1:  # Last attempt
+                    # Fall back to internal embeddings if external API consistently fails
+                    if debug:
+                        debug_print("Embeddings", "External API failed after all retries, falling back to internal embeddings")
+                    return self._generate_internal_embeddings(text, debug)
+                    
+            except requests.exceptions.ConnectionError as e:
+                error_msg = f"Connection error on attempt {attempt + 1}: {str(e)}"
+                if debug:
+                    debug_print("Embeddings", error_msg)
+                if attempt == max_retries - 1:  # Last attempt
+                    # Fall back to internal embeddings
+                    if debug:
+                        debug_print("Embeddings", "Connection failed after all retries, falling back to internal embeddings")
+                    return self._generate_internal_embeddings(text, debug)
+                    
+            except Exception as e:
+                error_msg = f"API request failed on attempt {attempt + 1}: {str(e)}"
+                if debug:
+                    debug_print("Embeddings", error_msg)
+                if attempt == max_retries - 1:  # Last attempt
+                    # Fall back to internal embeddings
+                    if debug:
+                        debug_print("Embeddings", "External API failed completely, falling back to internal embeddings")
+                    return self._generate_internal_embeddings(text, debug)
+        
+        # If we reach here, all attempts failed - fallback to internal embeddings
+        return self._generate_internal_embeddings(text, debug)
+
+    def _generate_internal_embeddings(self, text: str, debug: bool = True) -> Optional[List[float]]:
+        """
+        Generate embeddings using OpenAI API as internal fallback
+        
+        Args:
+            text (str): Text to embed
+            debug (bool): Enable debug logging
             
-            # Setup headers for request
-            request_headers = {"Content-Type": "application/json"}
-            if EMBEDDING_API_KEY and not is_local_api:
-                request_headers["Authorization"] = f"Bearer {EMBEDDING_API_KEY}"
+        Returns:
+            list: Embeddings vector or None if failed
+        """
+        try:
+            import openai
+            
+            if not OPENAI_API_KEY:
+                if debug:
+                    debug_print("Embeddings", "OpenAI API key not configured for internal embeddings")
+                return None
+            
+            # Generate cache key for internal embeddings
+            text_hash = hashlib.md5(f"internal_{text}".encode()).hexdigest()
+            
+            # Check cache first
+            if text_hash in embedding_cache:
+                entry = embedding_cache[text_hash]
+                if not entry.is_expired(CACHE_TTL):
+                    entry.increment_hits()
+                    if debug:
+                        debug_print("Embeddings", f"Internal cache HIT for text hash: {text_hash[:8]}...")
+                    return entry.vector
             
             if debug:
-                api_type = "LOKAL" if is_local_api else "EKSTERN"
-                debug_print("Embeddings", f"Calling {api_type} API: {EMBEDDING_API_ENDPOINT}")
-                debug_print("Embeddings", f"Payload: {json.dumps(payload, ensure_ascii=False)[:100]}...")
+                debug_print("Embeddings", "Generating embeddings with OpenAI (internal)")
             
-            # Make API request with timeout
-            response = requests.post(
-                EMBEDDING_API_ENDPOINT,
-                headers=request_headers,
-                json=payload,
-                timeout=30
+            # Initialize OpenAI client
+            client = openai.OpenAI(api_key=OPENAI_API_KEY)
+            
+            # Create embedding
+            response = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=text,
+                encoding_format="float"
             )
             
-            if response.status_code == 200:
-                data = response.json()
+            if response.data and len(response.data) > 0:
+                vectors = response.data[0].embedding
                 
-                # Extract vectors based on API response format
-                if "vectors" in data and data["vectors"]:
-                    # Multiple vectors format
-                    vectors = data["vectors"][0]
-                elif "vector" in data:
-                    # Single vector format
-                    vectors = data["vector"]
-                elif "data" in data and data["data"]:
-                    # OpenAI-style format
-                    vectors = data["data"][0]["embedding"]
-                else:
-                    # Direct vector format
-                    vectors = data
+                # Cache the result
+                cache_entry = EmbeddingCacheEntry(
+                    vector=vectors,
+                    dimensions=len(vectors)
+                )
+                embedding_cache[text_hash] = cache_entry
                 
-                # Validate vector format
-                if isinstance(vectors, list) and len(vectors) > 0:
-                    # Cache the result with enhanced metadata
-                    cache_entry = EmbeddingCacheEntry(
-                        vector=vectors,
-                        dimensions=len(vectors)
-                    )
-                    embedding_cache[text_hash] = cache_entry
-                    
-                    if debug:
-                        debug_print("Embeddings", f"Received {len(vectors)} dimensional vector (cached)")
-                        debug_print("Embeddings", f"Sample values: {vectors[:3]}")
-                        debug_print("Embeddings", f"Cache size: {len(embedding_cache)} entries")
-                        debug_print("Embeddings", f"API type: {api_type}")
-                    
-                    return vectors
-                else:
-                    if debug:
-                        debug_print("Embeddings", f"Invalid vector format received: {type(vectors)}")
-                    return None
-            else:
-                error_text = response.text[:200] if response.text else "No error message"
                 if debug:
-                    debug_print("Embeddings", f"API error: {response.status_code} - {error_text}")
-                raise Exception(f"Embedding API returned {response.status_code}: {error_text}")
+                    debug_print("Embeddings", f"Internal OpenAI embedding success: {len(vectors)} dimensions (cached)")
                 
-        except requests.exceptions.Timeout:
-            error_msg = "API request timed out (30s)"
-            if debug:
-                debug_print("Embeddings", error_msg)
-            raise Exception(error_msg)
-        except requests.exceptions.ConnectionError as e:
-            error_msg = f"Connection error: {str(e)}"
-            if debug:
-                debug_print("Embeddings", error_msg)
-            raise Exception(error_msg)
+                return vectors
+            else:
+                if debug:
+                    debug_print("Embeddings", "No embedding data received from OpenAI")
+                return None
+                
         except Exception as e:
-            error_msg = f"API request failed: {str(e)}"
             if debug:
-                debug_print("Embeddings", error_msg)
-            raise e
+                debug_print("Embeddings", f"Internal embedding generation failed: {str(e)}")
+            return None
 
     def batch_embeddings(self, texts: List[str], debug: bool = True) -> List[Optional[List[float]]]:
         """

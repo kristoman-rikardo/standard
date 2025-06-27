@@ -734,7 +734,7 @@
                     addMessageToChat('assistant', 'Tilkoblingen tok for lang tid å etablere. Prøver automatisk fallback...');
                     fallbackToSyncAPI(lastUserMessage);
                 }
-            }, 60000); // Økt til 60 sekunder initial timeout
+            }, 90000); // Økt til 90 sekunder for Railway ustabilitet
             
             // FORBEDRET: Timeout for hele prosessen
             const processingTimeout = setTimeout(() => {
@@ -745,7 +745,7 @@
                     addMessageToChat('assistant', 'Prosesseringen tok for lang tid. Prøver en enklere tilnærming...');
                     fallbackToSyncAPI(lastUserMessage);
                 }
-            }, 120000); // 2 minutter total timeout
+            }, 180000); // 3 minutter total timeout for embedding-generering
             
             eventSource.onopen = function(event) {
                 console.log('✅ SSE connection opened successfully');
