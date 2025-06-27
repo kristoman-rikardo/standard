@@ -13,9 +13,9 @@ Werkzeug==3.0.1
 # Production WSGI server
 gunicorn==21.2.0
 
-# Data validation and serialization
+# Data validation and serialization - FIXED: Compatible versions
 pydantic==2.10.6
-pydantic-core==2.27.1
+pydantic-core==2.27.2
 
 # ElasticSearch client
 elasticsearch==8.11.0
