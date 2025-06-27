@@ -147,13 +147,23 @@ class SSEManager:
 sse_manager = SSEManager()
 
 def create_sse_response(session_id: str) -> Response:
-    """Create SSE response for session"""
+    """Create SSE response for session - with automatic session creation"""
     
     def event_stream():
+        # FIKSET: Prøv å få session, opprett automatisk hvis den ikke finnes
         session = sse_manager.get_session(session_id)
         if not session:
-            yield f"data: {json.dumps({'type': 'error', 'error': 'Session not found'})}\n\n"
-            return
+            logger.info(f"🆔 SSE: Session {session_id} not found, creating automatically")
+            # Opprett session automatisk for å unngå race condition
+            sse_manager.create_session(session_id)
+            session = sse_manager.get_session(session_id)
+            
+            if not session:
+                logger.error(f"❌ SSE: Failed to create session {session_id}")
+                yield f"data: {json.dumps({'type': 'error', 'error': 'Could not create session'})}\n\n"
+                return
+        
+        logger.info(f"✅ SSE: Stream started for session {session_id}")
         
         # Send initial connection confirmation
         yield f"data: {json.dumps({'type': 'connected', 'session_id': session_id})}\n\n"
@@ -162,6 +172,7 @@ def create_sse_response(session_id: str) -> Response:
         timeout_counter = 0
         max_timeout = 300  # 5 minutter total timeout (økt fra 2 minutter)
         keepalive_interval = 15  # Send keep-alive hver 15. sekund (redusert fra 30)
+        last_activity_check = time.time()
         
         try:
             while session.is_active and timeout_counter < max_timeout:
@@ -170,11 +181,13 @@ def create_sse_response(session_id: str) -> Response:
                     sse_manager.cleanup_expired_sessions()
                 
                 # Check for new messages
-                if message_index < len(session.messages):
-                    while message_index < len(session.messages):
+                current_message_count = len(session.messages)
+                if message_index < current_message_count:
+                    while message_index < current_message_count:
                         message = session.messages[message_index]
                         yield f"data: {json.dumps(message['data'])}\n\n"
                         message_index += 1
+                        last_activity_check = time.time()
                     timeout_counter = 0  # Reset timeout on activity
                 else:
                     # Send keepalive every 15 seconds (hyppigere)
@@ -184,15 +197,21 @@ def create_sse_response(session_id: str) -> Response:
                     time.sleep(0.5)  # Sjekk hver 0.5 sekund
                     timeout_counter += 0.5
                     
+                    # NYTT: Sjekk om session er blitt inaktiv
+                    if not session.is_active:
+                        logger.info(f"🔚 SSE: Session {session_id} became inactive, ending stream")
+                        break
+                    
         except GeneratorExit:
-            logger.info(f"SSE client disconnected: {session_id}")
+            logger.info(f"🔌 SSE: Client disconnected for session {session_id}")
         except Exception as e:
-            logger.error(f"SSE stream error for session {session_id}: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            logger.error(f"❌ SSE: Stream error for session {session_id}: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'error': f'Stream error: {str(e)}'})}\n\n"
         finally:
             # Mark session as inactive
-            session.is_active = False
-            logger.info(f"SSE stream ended for session: {session_id}")
+            if session:
+                session.is_active = False
+            logger.info(f"🏁 SSE: Stream ended for session {session_id}")
     
     response = Response(
         event_stream(),

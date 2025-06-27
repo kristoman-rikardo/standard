@@ -765,7 +765,7 @@
                         console.log('🔗 SSE connected for session:', data.session_id);
                     } else if (data.type === 'progress') {
                         progressUpdated = true;
-                        updateProgress(data.stage, data.message, data.emoji, data.progress);
+                        updateProgress(data.stage, data.progress, data.message, data.emoji);
                     } else if (data.type === 'token') {
                         if (!answerMessageElement) {
                             answerMessageElement = addMessageToChat('assistant', '');
@@ -892,7 +892,7 @@
                 }
                 
                 showProgress();
-                updateProgress('fallback', 'Bruker alternativ tilkobling...', '🔄', 50);
+                updateProgress('fallback', 50, 'Bruker alternativ tilkobling...');
                 
                 const response = await fetch('/api/query', {
                     method: 'POST',
@@ -985,95 +985,39 @@
         }
         
         // Show progress
-        function showProgress() {
-            document.getElementById('progress-container').classList.add('active');
-            document.getElementById('progress-items').innerHTML = '';
-        }
-        
-        // Update progress
-        function updateProgress(stage, message, emoji, progress) {
-            const progressItems = document.getElementById('progress-items');
+        function showProgress(message = 'Behandler spørsmål...', progress = 0) {
+            console.log(`🎯 showProgress called: "${message}", progress: ${progress}`);
+            const progressContainer = document.getElementById('progress-container');
+            const progressMessage = document.getElementById('progress-message');
+            const progressBar = document.getElementById('progress-bar');
             
-            // Check if this stage already exists
-            let existingItem = document.querySelector(`[data-stage="${stage}"]`);
-            
-            if (!existingItem) {
-                existingItem = document.createElement('div');
-                existingItem.className = 'progress-item';
-                existingItem.setAttribute('data-stage', stage);
-                progressItems.appendChild(existingItem);
-            }
-            
-            // Mark as active or completed based on progress
-            document.querySelectorAll('.progress-item').forEach(item => {
-                item.classList.remove('active');
+            // Debug logging
+            console.log('🎯 Progress elements:', {
+                container: !!progressContainer,
+                message: !!progressMessage,
+                bar: !!progressBar
             });
             
-            // Get appropriate SVG icon based on stage
-            const getSvgIcon = (stage) => {
-                const icons = {
-                    'validation': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>',
-                    'analysis': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>',
-                    'search': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>',
-                    'answer_generation': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>',
-                    'fallback': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/></svg>',
-                    'default': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>'
-                };
-                return icons[stage] || icons['default'];
-            };
-            
-            if (progress >= 100) {
-                // Mark as completed with checkmark
-                existingItem.classList.remove('active');
-                existingItem.classList.add('completed');
-                existingItem.innerHTML = `
-                    <span class="progress-emoji">${getSvgIcon(stage)}</span>
-                    <span class="progress-text">${message}</span>
-                    <div class="progress-checkmark">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                        </svg>
-                    </div>
-                `;
+            if (progressContainer && progressMessage && progressBar) {
+                progressContainer.style.display = 'block';
+                progressMessage.textContent = message;
+                progressBar.style.width = progress + '%';
+                console.log(`✅ Progress shown: "${message}" at ${progress}%`);
             } else {
-                // Mark as active with spinner
-                existingItem.classList.add('active');
-                existingItem.classList.remove('completed');
-                existingItem.innerHTML = `
-                    <span class="progress-emoji">${getSvgIcon(stage)}</span>
-                    <span class="progress-text">${message}</span>
-                    <div class="progress-spinner"></div>
-                `;
-            }
-            
-            // Mark all previous completed steps
-            const allItems = document.querySelectorAll('.progress-item');
-            const currentIndex = Array.from(allItems).indexOf(existingItem);
-            
-            for (let i = 0; i < currentIndex; i++) {
-                const item = allItems[i];
-                if (!item.classList.contains('completed')) {
-                    item.classList.add('completed');
-                    item.classList.remove('active');
-                    // Update HTML to show checkmark
-                    const svgIcon = item.querySelector('.progress-emoji').innerHTML;
-                    const text = item.querySelector('.progress-text').textContent;
-                    item.innerHTML = `
-                        <span class="progress-emoji">${svgIcon}</span>
-                        <span class="progress-text">${text}</span>
-                        <div class="progress-checkmark">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                            </svg>
-                        </div>
-                    `;
-                }
+                console.error('❌ Progress elements not found!');
             }
         }
         
         // Hide progress
         function hideProgress() {
-            document.getElementById('progress-container').classList.remove('active');
+            console.log('🎯 hideProgress called');
+            const progressContainer = document.getElementById('progress-container');
+            if (progressContainer) {
+                progressContainer.style.display = 'none';
+                console.log('✅ Progress hidden');
+            } else {
+                console.error('❌ Progress container not found for hiding');
+            }
         }
         
         // Reset input
@@ -1387,6 +1331,17 @@
                 console.error('❌ Error saving conversation memory:', error);
                 return false;
             }
+        }
+
+        function updateProgress(stage, progress, message, emoji = '') {
+            console.log(`🎯 updateProgress: stage="${stage}", progress=${progress}, message="${message}", emoji="${emoji}"`);
+            
+            const fullMessage = emoji ? `${emoji} ${message}` : message;
+            showProgress(fullMessage, progress);
+            
+            // NYTT: Også oppdater progress indikator
+            progressUpdated = true;
+            console.log(`✅ Progress updated: ${fullMessage} (${progress}%)`);
         }
     </script>
 </body>
