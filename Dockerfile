@@ -26,8 +26,10 @@ WORKDIR /app
 # Kopier requirements først for bedre Docker layer caching
 COPY requirements.txt .
 
-# Installer Python avhengigheter med optimalisering
+# CRITICAL FIX: Install httpx first to avoid proxies conflict
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir "httpx==0.27.2" "httpcore==1.0.7" "h11==0.14.0" && \
+    pip install --no-cache-dir "openai==1.57.0" && \
     pip install --no-cache-dir -r requirements.txt
 
 # Kopier applikasjonskode
