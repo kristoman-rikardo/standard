@@ -1022,8 +1022,30 @@ def rebuild_conversation_memory():
 
 @app.errorhandler(404)
 def not_found(error):
-    """Handle 404 errors"""
-    return jsonify({'error': 'Endpoint not found'}), 404
+    """Handle 404 errors - redirect web requests to main page, return JSON for API requests"""
+    # For API requests (starts with /api/), return JSON
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Endpoint not found'}), 404
+    
+    # For web requests, redirect to main application
+    return render_template('index.html'), 200
+
+
+@app.route('/favicon.ico')
+def favicon():
+    """Handle favicon requests"""
+    return '', 204
+
+
+@app.route('/<path:path>')
+def catch_all(path):
+    """Catch all routes and serve main app for non-API paths"""
+    # Don't catch API routes
+    if path.startswith('api/'):
+        return jsonify({'error': 'API endpoint not found'}), 404
+    
+    # Serve main app for all other paths
+    return render_template('index.html')
 
 
 @app.errorhandler(429)
