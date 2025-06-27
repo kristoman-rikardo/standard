@@ -1,85 +1,56 @@
-# CRITICAL: HTTP clients FIRST to avoid OpenAI proxies conflict
+# Core async and HTTP dependencies (mest kritisk først)
 httpx==0.27.2
 httpcore==1.0.7
 h11==0.14.0
-
-# OpenAI client - must come after httpx
-openai==1.57.0
-
-# Core Flask dependencies
-Flask==3.0.0
-Werkzeug==3.0.1
-
-# Production WSGI server
-gunicorn==21.2.0
-
-# Data validation and serialization - FIXED: Compatible versions
-pydantic==2.10.6
-pydantic-core==2.27.2
-
-# ElasticSearch client
-elasticsearch==8.11.0
-
-# LangChain for prompt management
-langchain-core>=0.1.0,<0.3.0
-langchain-openai>=0.0.1,<0.2.0
-
-# HTTP requests and async clients
-requests==2.31.0
-urllib3==2.1.0
-aiohttp==3.9.5
-
-# Core async dependencies
-anyio==4.6.2
+anyio==4.6.0
 sniffio==1.3.1
 certifi==2024.8.30
 
-# Numerical computing for embeddings
+# FastAPI ecosystem
+fastapi==0.115.14
+uvicorn==0.32.1
+python-multipart==0.0.18
+
+# Flask ecosystem
+Flask==3.0.0
+Werkzeug==3.0.6
+gunicorn==21.2.0
+
+# OpenAI and AI/ML
+openai==1.57.0
 numpy==1.24.3
 
-# FastAPI for local embedding service
-fastapi==0.104.1
-uvicorn==0.24.0
+# Data validation and models  
+pydantic==2.10.6
+pydantic-core==2.27.2
 
-# Rate limiting
-Flask-Limiter==3.5.0
+# Database and search
+elasticsearch==8.16.0
 
-# HTML sanitization (security)
+# Web scraping and parsing
+aiohttp==3.9.5
+beautifulsoup4==4.12.3
+lxml==5.1.0
+requests==2.31.0
+urllib3==2.1.0
+
+# LangChain for prompt management
+langchain==0.1.0
+langchain-core==0.1.12
+langchain-community==0.0.13
+
+# Performance enhancers (JSON)
+orjson==3.10.12
+ujson==5.10.0
+
+# Utilities and helpers
+python-dotenv==1.0.1
+slowapi==0.1.9
+schedule==1.2.2
 bleach==6.1.0
 
-# Environment variables
-python-dotenv==1.0.0
-
-# Logging and monitoring
-structlog==23.2.0
-
-# Performance monitoring
-prometheus-flask-exporter==0.23.0
-
-# Security headers
-flask-talisman==1.1.0
-
-# CORS handling
-flask-cors==4.0.0
-
-# JSON handling
-orjson==3.9.10
-
-# Async support
-gevent==23.9.1
-
-# Health checks
-psutil==5.9.6
-
-# Configuration management
-pyyaml==6.0.1
-
-# Development and testing (optional)
-pytest==7.4.3
+# Development and testing
+pytest==8.3.4
+pytest-asyncio==0.25.0
 pytest-flask==1.3.0
 black==23.11.0
-flake8==6.1.0
-mypy==1.7.1
-
-# Production optimizations
-brotlipy==0.7.0
