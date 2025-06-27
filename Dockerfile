@@ -37,12 +37,12 @@ COPY . .
 RUN mkdir -p logs static/css static/js static/img && \
     chmod -R 755 /app
 
-# Railway bruker automatisk PORT miljøvariabel
-EXPOSE ${PORT:-5000}
+# Railway bruker automatisk PORT miljøvariabel - dokumentasjon
+EXPOSE 8000
 
-# Health check tilpasset Railway med PORT miljøvariabel
+# Health check forenklet - Railway vil automatisk sjekke på riktig port
 HEALTHCHECK --interval=30s --timeout=15s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-5000}/health || exit 1
+    CMD curl -f http://localhost:$PORT/health || exit 1
 
-# Railway start kommando med PORT miljøvariabel
-CMD gunicorn --bind 0.0.0.0:${PORT:-5000} --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-120} --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --preload --access-logfile - --error-logfile - app:app
+# Railway start kommando med eksplisitt shell for miljøvariabel ekspansjon
+CMD /bin/sh -c "exec gunicorn --bind 0.0.0.0:${PORT:-8000} --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-120} --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --preload --access-logfile - --error-logfile - app:app"
