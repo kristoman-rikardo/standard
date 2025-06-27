@@ -14,6 +14,7 @@ python-multipart==0.0.18
 # Flask ecosystem
 Flask==3.0.0
 Werkzeug==3.0.6
+flask-limiter==3.8.0
 gunicorn==21.2.0
 
 # OpenAI and AI/ML
