@@ -30,7 +30,7 @@ class Conversation:
 
 @dataclass
 class Message:
-    """Melding i samtale"""
+    """Melding objekt"""
     id: int
     conversation_id: str
     question: str
