@@ -20,13 +20,17 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMBEDDING_API_ENDPOINT = os.getenv("EMBEDDING_API_ENDPOINT")
 EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", "")
 
-# OpenAI Configuration  
+# OpenAI Configuration with MAXIMUM token support and deterministic temperature
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
-OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.0"))
+OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.0"))  # Deterministic responses
 
-# Specialized model configuration
+# Specialized model configuration with MAXIMUM token support
 OPENAI_MODEL_DEFAULT = os.getenv("OPENAI_MODEL_DEFAULT", "gpt-4o")  # For optimization, analysis, extraction
 OPENAI_MODEL_ANSWER = os.getenv("OPENAI_MODEL_ANSWER", "gpt-4o")  # For final answer generation
+
+# MAXIMUM token configuration
+OPENAI_MAX_TOKENS_DEFAULT = int(os.getenv("OPENAI_MAX_TOKENS_DEFAULT", "4000"))  # Maximum for most operations
+OPENAI_MAX_TOKENS_ANSWER = int(os.getenv("OPENAI_MAX_TOKENS_ANSWER", "4000"))  # Maximum for answer generation
 
 # Fallback credentials for basic auth
 ELASTICSEARCH_USER = os.getenv("ELASTICSEARCH_USER", "")

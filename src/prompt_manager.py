@@ -43,43 +43,43 @@ class PromptConfig:
     ttl_seconds: int  # Cache TTL
     system_message: str
     
-# Optimized prompt configurations based on operation type
+# Optimized prompt configurations with MAXIMUM token limits and deterministic temperatures
 PROMPT_CONFIGS = {
     "analysis": PromptConfig(
-        max_tokens=20,  # Only need single word response
-        temperature=0.1,  # Deterministic routing
+        max_tokens=4000,  # Maximum tokens for detailed analysis
+        temperature=0.0,  # Deterministic routing
         ttl_seconds=3600,  # Cache for 1 hour
-        system_message="You are a routing system that analyzes questions and returns exactly one of: 'including', 'without', 'personal', or 'memory'."
+        system_message="You are a routing system that analyzes questions and returns exactly one of: 'including', 'without', 'personal', or 'memory'. Provide detailed reasoning for your choice."
     ),
     "extractStandard": PromptConfig(
-        max_tokens=100,  # Standard numbers are short
+        max_tokens=4000,  # Maximum tokens for comprehensive extraction
         temperature=0.0,  # Deterministic extraction
         ttl_seconds=1800,  # Cache for 30 minutes
-        system_message="You extract standard numbers from questions. Return only the standard numbers, comma separated."
+        system_message="You extract standard numbers from questions. Return only the standard numbers, comma separated. If no standards are found, explain why."
     ),
     "extractFromMemory": PromptConfig(
-        max_tokens=100,  # Memory terms are short
+        max_tokens=4000,  # Maximum tokens for comprehensive memory extraction
         temperature=0.0,  # Deterministic extraction
         ttl_seconds=900,   # Cache for 15 minutes
-        system_message="You extract standard numbers from memory context. Return only the standard numbers, comma separated."
+        system_message="You extract standard numbers from memory context. Return only the standard numbers, comma separated. If no standards are found, explain why."
     ),
     "optimizeSemantic": PromptConfig(
-        max_tokens=200,  # Optimized questions can be longer
-        temperature=0.3,  # Some creativity for optimization
+        max_tokens=4000,  # Maximum tokens for comprehensive optimization
+        temperature=0.0,  # Deterministic optimization
         ttl_seconds=1800,  # Cache for 30 minutes
-        system_message="You are a helpful assistant that optimizes questions for semantic search."
+        system_message="You are a helpful assistant that optimizes questions for semantic search. Provide comprehensive optimization with detailed reasoning."
     ),
     "optimizeTextual": PromptConfig(
-        max_tokens=150,  # Textual optimization is shorter
-        temperature=0.2,  # Slight creativity
+        max_tokens=4000,  # Maximum tokens for comprehensive textual optimization
+        temperature=0.0,  # Deterministic optimization
         ttl_seconds=1800,  # Cache for 30 minutes
-        system_message="You optimize questions for textual search by extracting key terms."
+        system_message="You optimize questions for textual search by extracting key terms. Provide comprehensive optimization with detailed reasoning."
     ),
     "answer": PromptConfig(
-        max_tokens=1500,  # Answers need more space
-        temperature=0.4,  # Balanced creativity
+        max_tokens=4000,  # Maximum tokens for comprehensive answers
+        temperature=0.0,  # Deterministic answers
         ttl_seconds=900,   # Cache for 15 minutes (answers change more)
-        system_message="You are a knowledgeable assistant providing detailed technical answers."
+        system_message="You are a knowledgeable assistant providing detailed technical answers based on Norwegian standards. Always provide comprehensive, accurate information with specific details from the provided context."
     )
 }
 
@@ -411,7 +411,7 @@ class PromptManager:
             # Fallback to original question if optimization fails
             return question
 
-    async def generate_answer(self, question: str, chunks: str, conversation_memory: str = "") -> str:
+    async def generate_answer(self, question: str, chunks: str, conversation_memory: str = "", force_detailed: bool = False) -> str:
         """
         Async version of answer generation with caching and chunk length management
         
@@ -419,6 +419,7 @@ class PromptManager:
             question: User's original question
             chunks: Formatted chunks from Elasticsearch
             conversation_memory: Formatted conversation memory
+            force_detailed: Force generation of detailed answer
             
         Returns:
             str: Final answer
@@ -446,12 +447,63 @@ class PromptManager:
             prompt_input = self.create_prompt_input(question, chunks=chunks, conversation_memory=conversation_memory)
             prompt_text = self.prompts["answer"].invoke(prompt_input).text
             
+            # Use MAXIMUM token configuration for all answers
+            config = PromptConfig(
+                max_tokens=4000,  # Maximum tokens for comprehensive answers
+                temperature=0.0,  # Deterministic answers
+                ttl_seconds=900,
+                system_message="You are a knowledgeable assistant providing detailed technical answers based on Norwegian standards. Always provide comprehensive, accurate information with specific details from the provided context. Use the full token limit to provide thorough, detailed responses."
+            )
+            
+            if force_detailed:
+                config = PromptConfig(
+                    max_tokens=4000,  # Maximum tokens for detailed answers
+                    temperature=0.0,  # Deterministic answers
+                    ttl_seconds=900,
+                    system_message="You are a knowledgeable assistant providing detailed technical answers based on Norwegian standards. Always provide comprehensive, accurate information with specific details from the provided context. Use the full token limit to provide thorough, detailed responses with extensive explanations."
+                )
+            
             messages = [
-                {"role": "system", "content": PROMPT_CONFIGS["answer"].system_message},
+                {"role": "system", "content": config.system_message},
                 {"role": "user", "content": prompt_text}
             ]
             
-            return await self._call_openai_optimized("answer", messages, conversation_memory=conversation_memory)
+            # Call OpenAI with MAXIMUM token configuration
+            response = await self.client.chat.completions.create(
+                model=OPENAI_MODEL_DEFAULT,
+                messages=messages,
+                temperature=config.temperature,
+                max_tokens=config.max_tokens,  # Maximum tokens
+                stream=False
+            )
+            
+            result = response.choices[0].message.content.strip()
+            
+            # Quality check - even with max tokens, ensure we got a substantial answer
+            if not result or len(result.strip()) < 50:
+                if self._debug_enabled:
+                    debug_print("Answer", "Generated answer too short despite max tokens, retrying with different approach")
+                
+                # Try with different prompt and MAXIMUM tokens
+                fallback_messages = [
+                    {"role": "system", "content": "You are a helpful assistant. Provide a detailed answer based on the given context. Use the full token limit to provide comprehensive information. If you cannot answer the question, say so clearly."},
+                    {"role": "user", "content": f"Question: {question}\n\nContext: {chunks}\n\nPlease provide a detailed answer using the full token limit:"}
+                ]
+                
+                response = await self.client.chat.completions.create(
+                    model=OPENAI_MODEL_DEFAULT,
+                    messages=fallback_messages,
+                    temperature=0.0,  # Deterministic
+                    max_tokens=4000,  # Maximum tokens
+                    stream=False
+                )
+                
+                result = response.choices[0].message.content.strip()
+            
+            if self._debug_enabled:
+                debug_print("Answer", f"Generated answer: {len(result)} characters (max tokens: {config.max_tokens})")
+            
+            return result
             
         except Exception as e:
             raise Exception(f"Answer generation failed: {e}")
@@ -501,18 +553,28 @@ class PromptManager:
             prompt_input = self.create_prompt_input(question, chunks=chunks, conversation_memory=conversation_memory)
             prompt_text = self.prompts["answer"].invoke(prompt_input).text
             
-            config = PROMPT_CONFIGS["answer"]
+            # Use MAXIMUM token configuration for streaming
+            config = PromptConfig(
+                max_tokens=4000,  # Maximum tokens for comprehensive streaming answers
+                temperature=0.0,  # Deterministic streaming
+                ttl_seconds=900,
+                system_message="You are a knowledgeable assistant providing detailed technical answers based on Norwegian standards. Always provide comprehensive, accurate information with specific details from the provided context. Use the full token limit to provide thorough, detailed responses."
+            )
+            
             messages = [
                 {"role": "system", "content": config.system_message},
                 {"role": "user", "content": prompt_text}
             ]
             
-            # Use streaming OpenAI API
+            if self._debug_enabled:
+                debug_print("Answer", f"Starting streaming answer generation with max_tokens: {config.max_tokens}")
+            
+            # Stream response with MAXIMUM tokens
             response = await self.client.chat.completions.create(
                 model=OPENAI_MODEL_DEFAULT,
                 messages=messages,
                 temperature=config.temperature,
-                max_tokens=config.max_tokens,
+                max_tokens=config.max_tokens,  # Maximum tokens
                 stream=True
             )
             

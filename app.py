@@ -42,9 +42,12 @@ config_class = get_config()
 app.config.from_object(config_class)
 config_class.init_app(app)
 
-# Set OpenAI API key - FIXED: Use correct attribute for newer openai version
+# Set OpenAI API key and configuration - FIXED: Use correct attribute for newer openai version
 if app.config.get('OPENAI_API_KEY'):
     openai.api_key = app.config['OPENAI_API_KEY']
+    # Set maximum tokens and deterministic temperature for all OpenAI calls
+    openai.max_tokens = app.config.get('OPENAI_MAX_TOKENS', 4000)  # Maximum tokens
+    openai.temperature = app.config.get('OPENAI_TEMPERATURE', 0.0)  # Deterministic responses
 
 # Initialize rate limiter
 limiter = Limiter(
@@ -523,6 +526,15 @@ def api_query():
             'from_cache': False,
             'session_id': session_id,
             
+            # Token configuration information
+            'token_config': {
+                'max_tokens_configured': app.config.get('OPENAI_MAX_TOKENS', 4000),
+                'temperature_configured': app.config.get('OPENAI_TEMPERATURE', 0.0),
+                'model_used': app.config.get('OPENAI_MODEL', 'gpt-4o'),
+                'token_optimization': 'MAXIMUM',
+                'temperature_mode': 'DETERMINISTIC'
+            },
+            
             # Additional debug fields for UI (only in development)
             'flow_debug': {
                 'route': result.get('route_taken', 'unknown'),
@@ -856,7 +868,16 @@ def api_query_stream():
             'stream_session_id': session_id,    # Same ID for SSE
             'stream_url': f'/api/stream/{session_id}',
             'status': 'started',
-            'debug': debug_enabled
+            'debug': debug_enabled,
+            
+            # Token configuration information
+            'token_config': {
+                'max_tokens_configured': app.config.get('OPENAI_MAX_TOKENS', 4000),
+                'temperature_configured': app.config.get('OPENAI_TEMPERATURE', 0.0),
+                'model_used': app.config.get('OPENAI_MODEL', 'gpt-4o'),
+                'token_optimization': 'MAXIMUM',
+                'temperature_mode': 'DETERMINISTIC'
+            }
         }
         
         app.logger.info(f"✅ STREAM API: Returning response: {response_data}")

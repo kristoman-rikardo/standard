@@ -407,7 +407,16 @@ class FlowManager:
                 "debug": "\n".join(debug_output) if debug else "",
                 "success": True,
                 "cache_stats": self.prompt_manager.get_cache_stats(),
-                "elasticsearch_stats": self.elasticsearch_client.get_cache_stats()
+                "elasticsearch_stats": self.elasticsearch_client.get_cache_stats(),
+                
+                # Token configuration information
+                "token_config": {
+                    "max_tokens_configured": 4000,
+                    "temperature_configured": 0.0,
+                    "model_used": "gpt-4o",
+                    "token_optimization": "MAXIMUM",
+                    "temperature_mode": "DETERMINISTIC"
+                }
             })
             
             return result
@@ -672,6 +681,16 @@ class FlowManager:
             
             result["processing_time"] = time.time() - start_time
             result["success"] = True  # Mark as success even if streaming failed but we got an answer
+            
+            # Add token configuration information
+            result["token_config"] = {
+                "max_tokens_configured": 4000,
+                "temperature_configured": 0.0,
+                "model_used": "gpt-4o",
+                "token_optimization": "MAXIMUM",
+                "temperature_mode": "DETERMINISTIC"
+            }
+            
             return result
             
         except Exception as e:

@@ -35,11 +35,11 @@ class Config:
     ELASTICSEARCH_TIMEOUT = 30
     ELASTICSEARCH_MAX_RETRIES = 3
     
-    # OpenAI configuration
+    # OpenAI configuration with MAXIMUM tokens and deterministic temperature
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
     OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o')
-    OPENAI_MAX_TOKENS = int(os.environ.get('OPENAI_MAX_TOKENS', '2048'))
-    OPENAI_TEMPERATURE = float(os.environ.get('OPENAI_TEMPERATURE', '0.0'))
+    OPENAI_MAX_TOKENS = int(os.environ.get('OPENAI_MAX_TOKENS', '4000'))  # Maximum tokens
+    OPENAI_TEMPERATURE = float(os.environ.get('OPENAI_TEMPERATURE', '0.0'))  # Deterministic responses
     
     # Input validation
     MAX_QUESTION_LENGTH = int(os.environ.get('MAX_QUESTION_LENGTH', '1000'))
