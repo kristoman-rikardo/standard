@@ -1,6 +1,0 @@
----
-description: 
-globs: 
-alwaysApply: true
----
-Always analyze the entire codebase to know how the flow is connected and what files and components we already have. Restrain from making overlapping components, instead edit existing files so they end up how we want. 
