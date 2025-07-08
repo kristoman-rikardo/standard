@@ -1,4 +1,4 @@
-#StandardGPT
+**StandardGPT**
 
 **Om prosjektet**
 Dette er et oppdrag utført av Dalai til Standard Norge/Standard Digital, som en chat med alle Standardene de forvalter. DEt er over 30 000 stk. i en Elasticsearch-database. 
