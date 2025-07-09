@@ -1,5 +1,5 @@
 """
-Elasticsearch client for StandardGPT with Cloud support and intelligent caching
+Elasticsearch client for StandardGPT with Cloud support. Set up currently for the Dalai test cloud environment. 
 """
 
 import json
