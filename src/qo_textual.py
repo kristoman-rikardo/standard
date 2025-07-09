@@ -1,5 +1,5 @@
 """
-Query object builder for textual search
+Query object builder for textual search, user query without standard name/number. 
 """
 
 def create_query(text: str, embeddings: list = None):
