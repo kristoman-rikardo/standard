@@ -1,4 +1,6 @@
-import json   # bare nødvendig hvis du vil ende med en JSON-streng
+# Bygger query object med filter/reference
+
+import json  
 
 # 1. Forbered inndata ------------------------------------
 standards = "Starnards fra extractStandard.py"        # f.eks. en komma-separert streng
