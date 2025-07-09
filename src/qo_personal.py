@@ -1,5 +1,5 @@
 """
-Query object builder for personal handbook search
+Query object builder for personal handbook search, giving the personalhåndbok reference
 """
 
 def create_query(text: str, embeddings: list = None):
