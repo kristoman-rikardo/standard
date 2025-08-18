@@ -117,6 +117,10 @@
             cursor: pointer;
             transition: all 0.2s ease;
             border: 1px solid transparent;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
         
         .conversation-item:hover {
@@ -134,6 +138,11 @@
             margin-bottom: 4px;
         }
         
+        .conversation-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
         .conversation-title {
             font-size: 14px;
             color: white;
@@ -141,6 +150,84 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+        
+        .conversation-menu {
+            position: relative;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        
+        .conversation-item:hover .conversation-menu {
+            opacity: 1;
+        }
+        
+        .menu-button {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        
+        .menu-button:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.9);
+        }
+        
+        .menu-button svg {
+            width: 16px;
+            height: 16px;
+        }
+        
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: #2d3748;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            min-width: 140px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            display: none;
+        }
+        
+        .dropdown-menu.show {
+            display: block;
+        }
+        
+        .dropdown-item {
+            padding: 8px 12px;
+            color: rgba(255, 255, 255, 0.9);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            transition: background 0.2s ease;
+        }
+        
+        .dropdown-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .dropdown-item.delete {
+            color: #ef4444;
+        }
+        
+        .dropdown-item.delete:hover {
+            background: rgba(239, 68, 68, 0.1);
+        }
+        
+        .dropdown-item svg {
+            width: 14px;
+            height: 14px;
         }
         
         /* MAIN CONTENT DESIGN */
@@ -319,10 +406,17 @@
         
         /* PROGRESS INDICATOR */
         .progress-container {
-            padding: 20px 30px;
+            padding: 16px 24px;
             border-top: 1px solid #e5e7eb;
-            background: #f9fafb;
+            background: #ffffff;
             display: none;
+        }
+        
+        .progress-text {
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 12px;
+            font-weight: 500;
         }
         
         .progress-container.active {
@@ -371,6 +465,12 @@
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
+
+        /* Clean progress bar + skeleton placeholder */
+        .progress { position: relative; height: 6px; background: #f1f5f9; border-radius: 9999px; overflow: hidden; }
+        .progress__bar { position: absolute; inset: 0 auto 0 0; width: 0%; background: linear-gradient(90deg, #22c55e, #16a34a); border-radius: 9999px; transition: width 200ms ease; }
+        .skeleton { border-radius: 10px; height: 12px; background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 37%, #f3f4f6 63%); background-size: 400% 100%; animation: shimmer 1.2s ease-in-out infinite; }
+        @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
         
         .progress-checkmark {
             width: 16px;
@@ -510,16 +610,10 @@
                 
                 <!-- PROGRESS INDICATOR -->
                 <div class="progress-container" id="progress-container">
-                    <div style="display: flex; align-items: center; gap: 12px; padding: 8px 0;">
-                        <div style="font-size: 18px; min-width: 24px;">⚡</div>
-                        <div id="progress-message" style="flex: 1; font-size: 14px; color: #6b7280;">Behandler spørsmål...</div>
-                        <div style="width: 100px; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden;">
-                            <div id="progress-bar" style="height: 100%; background: #22c55e; border-radius: 3px; width: 0%; transition: width 0.3s ease;"></div>
-                        </div>
-                        <div style="font-size: 12px; color: #9ca3af;">0%</div>
-                    </div>
-                    <div id="progress-items">
-                        <!-- Dynamisk innhold for detaljert progress -->
+                    <div class="progress-text" id="progress-text">Behandler spørsmål...</div>
+                    <div class="skeleton" id="progress-placeholder" style="width: 55%; max-width: 520px; margin-bottom: 10px;"></div>
+                    <div class="progress">
+                        <div class="progress__bar" id="progress-bar"></div>
                     </div>
                 </div>
                 
@@ -653,12 +747,10 @@
                 console.log('🚀 Sending question:', question);
                 console.log('🆔 Using session ID:', currentSessionId);
                 
-                // VIKTIG: Sørg for at vi alltid har en session ID
-                if (!currentSessionId) {
-                    currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
-                    localStorage.setItem('standardgpt_session_id', currentSessionId);
-                    console.log('🆔 Generated new session ID:', currentSessionId);
-                }
+                // VIKTIG: Generer ALLTID ny session ID for hvert spørsmål for å unngå blanding av svar
+                currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}_${Math.floor(Math.random() * 10000)}`;
+                localStorage.setItem('standardgpt_session_id', currentSessionId);
+                console.log('🆔 Generated fresh session ID for new question:', currentSessionId);
                 
                 // Start streaming request
                 const response = await fetch('/api/query/stream', {
@@ -775,7 +867,9 @@
                         progressUpdated = true;
                         updateProgress(data.stage, data.progress, data.message, data.emoji);
                     } else if (data.type === 'token') {
+                        // Hide progress when streaming starts
                         if (!answerMessageElement) {
+                            hideProgress();
                             answerMessageElement = addMessageToChat('assistant', '');
                         }
                         currentAnswer += data.token;
@@ -826,6 +920,10 @@
                         hideProgress();
                         addMessageToChat('assistant', `Feil: ${data.error}`);
                         resetInput();
+                    } else if (data.type === 'conversation_id') {
+                        console.log('💬 Conversation ID received:', data.conversation_id);
+                        currentConversationId = data.conversation_id;
+                        console.log('✅ Updated currentConversationId:', currentConversationId);
                     } else if (data.type === 'keepalive') {
                         console.log('💓 SSE keepalive received');
                         // Reset timeouts on keepalive
@@ -848,6 +946,14 @@
                 
                 clearTimeout(connectionTimeout);
                 clearTimeout(processingTimeout);
+                
+                // Don't immediately close on error - let it try to reconnect
+                if (eventSource.readyState === EventSource.CLOSED) {
+                    console.log('🔌 SSE connection closed, will not reconnect');
+                    hideProgress();
+                    addMessageToChat('assistant', 'Tilkoblingen ble avbrutt. Prøv å spørre på nytt.');
+                    resetInput();
+                }
                 
                 // FORBEDRET: Intelligent retry logic
                 if (eventSource.readyState === EventSource.CONNECTING) {
@@ -962,12 +1068,52 @@
             messageDiv.appendChild(contentDiv);
             messagesArea.appendChild(messageDiv);
             
-            // Scroll to bottom
-            messagesArea.scrollTop = messagesArea.scrollHeight;
+            // Smart scroll - only scroll to bottom if user is already near bottom
+            smartScrollToBottom();
             
             return contentDiv;
         }
         
+        // Track if user is manually scrolling
+        let userIsScrolling = false;
+        let scrollTimeout;
+        
+        // Smart scroll - auto-scroll unless user has scrolled up recently
+        function smartScrollToBottom() {
+            const messagesArea = document.getElementById('messages-area');
+            if (!messagesArea) return;
+            
+            // If user has scrolled up recently, don't auto-scroll
+            if (userIsScrolling) {
+                return;
+            }
+            
+            // Always auto-scroll to bottom (this is the default behavior we want)
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+        }
+        
+        // Track user scroll behavior - only when scrolling up
+        let lastScrollTop = 0;
+        document.getElementById('messages-area').addEventListener('scroll', function() {
+            const messagesArea = this;
+            const currentScrollTop = messagesArea.scrollTop;
+            
+            // Only set userIsScrolling if user scrolled up (not down/auto-scroll)
+            if (currentScrollTop < lastScrollTop) {
+                userIsScrolling = true;
+                
+                // Clear existing timeout
+                clearTimeout(scrollTimeout);
+                
+                // Reset after user stops scrolling for 2 seconds
+                scrollTimeout = setTimeout(() => {
+                    userIsScrolling = false;
+                }, 2000);
+            }
+            
+            lastScrollTop = currentScrollTop;
+        });
+
         // Format message content
         function formatMessage(content) {
             // Convert bullet points to HTML
@@ -987,57 +1133,33 @@
         function updateMessageContent(element, content) {
             element.innerHTML = formatMessage(content);
             
-            // Scroll to bottom
-            const messagesArea = document.getElementById('messages-area');
-            messagesArea.scrollTop = messagesArea.scrollHeight;
+            // Smart scroll - only scroll to bottom if user is already near bottom
+            smartScrollToBottom();
         }
         
         // Show progress
         function showProgress(message = 'Behandler spørsmål...', progress = 0) {
-            console.log(`🎯 showProgress called: "${message}", progress: ${progress}`);
-            const progressContainer = document.getElementById('progress-container');
-            const progressMessage = document.getElementById('progress-message');
-            const progressBar = document.getElementById('progress-bar');
+            const box = document.getElementById('progress-container');
+            const bar = document.getElementById('progress-bar');
+            const text = document.getElementById('progress-text');
+            if (!box || !bar || !text) return;
             
-            // Debug logging
-            console.log('🎯 Progress elements:', {
-                container: !!progressContainer,
-                message: !!progressMessage,
-                bar: !!progressBar
-            });
-            
-            if (progressContainer && progressMessage && progressBar) {
-                progressContainer.style.display = 'block';
-                progressMessage.textContent = message;
-                progressBar.style.width = progress + '%';
-                
-                // NYTT: Oppdater også prosent-visningen
-                const progressPercent = progressContainer.querySelector('div[style*="font-size: 12px"]');
-                if (progressPercent) {
-                    progressPercent.textContent = Math.round(progress) + '%';
-                }
-                
-                console.log(`✅ Progress shown: "${message}" at ${progress}%`);
-            } else {
-                console.error('❌ Progress elements not found!');
-                console.error('❌ Details:', {
-                    container: progressContainer,
-                    message: progressMessage,
-                    bar: progressBar
-                });
-            }
+            box.style.display = 'block';
+            text.textContent = message;
+            const safe = Math.max(progress, 8);
+            bar.style.width = safe + '%';
         }
         
         // Hide progress
         function hideProgress() {
-            console.log('🎯 hideProgress called');
-            const progressContainer = document.getElementById('progress-container');
-            if (progressContainer) {
-                progressContainer.style.display = 'none';
-                console.log('✅ Progress hidden');
-            } else {
-                console.error('❌ Progress container not found for hiding');
-            }
+            const box = document.getElementById('progress-container');
+            const bar = document.getElementById('progress-bar');
+            if (!box || !bar) return;
+            bar.style.width = '100%';
+            setTimeout(() => {
+                box.style.display = 'none';
+                bar.style.width = '0%';
+            }, 200);
         }
         
         // Reset input
@@ -1083,12 +1205,36 @@
                             convElement.dataset.conversationId = conv.id; // Add data attribute
                             
                             // Use arrow function to preserve context and avoid null reference
-                            convElement.addEventListener('click', () => {
+                            convElement.addEventListener('click', (event) => {
+                                // Don't load conversation if clicking on menu button or dropdown
+                                if (event.target.closest('.conversation-menu')) {
+                                    return;
+                                }
                                 loadConversation(conv.id);
                             });
                             
                             convElement.innerHTML = `
-                                <div class="conversation-title">${conv.title}</div>
+                                <div class="conversation-content">
+                                    <div class="conversation-title">${conv.title}</div>
+                                </div>
+                                <div class="conversation-menu">
+                                    <button class="menu-button" onclick="toggleConversationMenu(event, '${conv.id}')">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                                            <circle cx="12" cy="5" r="2"/>
+                                            <circle cx="12" cy="12" r="2"/>
+                                            <circle cx="12" cy="19" r="2"/>
+                                        </svg>
+                                    </button>
+                                    <div class="dropdown-menu" id="menu-${conv.id}">
+                                        <div class="dropdown-item delete" onclick="deleteConversation(event, '${conv.id}')">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M3 6h18v2H3V6zm2 3v11c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V9H5zm3 2h2v7H8v-7zm4 0h2v7h-2v-7z"/>
+                                                <path d="M10 2h4v2H10V2z"/>
+                                            </svg>
+                                            Slett samtale
+                                        </div>
+                                    </div>
+                                </div>
                             `;
                             
                             conversationsList.appendChild(convElement);
@@ -1255,6 +1401,74 @@
             resetInput();
         }
 
+        // Toggle conversation menu
+        function toggleConversationMenu(event, conversationId) {
+            event.stopPropagation(); // Prevent conversation click
+            
+            // Close all other menus
+            document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                if (menu.id !== `menu-${conversationId}`) {
+                    menu.classList.remove('show');
+                }
+            });
+            
+            // Toggle current menu
+            const menu = document.getElementById(`menu-${conversationId}`);
+            if (menu) {
+                menu.classList.toggle('show');
+            }
+        }
+        
+        // Delete conversation
+        async function deleteConversation(event, conversationId) {
+            event.stopPropagation(); // Prevent conversation click
+            
+            if (!confirm('Er du sikker på at du vil slette denne samtalen?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/conversations/${conversationId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to delete conversation: ${response.status}`);
+                }
+                
+                // Remove from UI
+                const conversationElement = document.querySelector(`[data-conversation-id="${conversationId}"]`);
+                if (conversationElement) {
+                    conversationElement.remove();
+                }
+                
+                // If this was the active conversation, clear the chat
+                if (currentConversationId === conversationId) {
+                    currentConversationId = null;
+                    clearMessagesButKeepWelcome();
+                    const welcomeMessage = document.getElementById('welcome-message');
+                    if (welcomeMessage) {
+                        welcomeMessage.classList.remove('hidden');
+                    }
+                }
+                
+                console.log('✅ Conversation deleted successfully');
+                
+            } catch (error) {
+                console.error('❌ Error deleting conversation:', error);
+                alert('Kunne ikke slette samtalen. Prøv igjen.');
+            }
+        }
+        
+        // Close dropdown menus when clicking outside
+        document.addEventListener('click', (event) => {
+            if (!event.target.closest('.conversation-menu')) {
+                document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                    menu.classList.remove('show');
+                });
+            }
+        });
+
         // New conversation button handler - FORBEDRET SESSION MANAGEMENT
         function newConversation() {
             console.log('🔄 Starting NEW conversation...');
@@ -1356,12 +1570,12 @@
         function updateProgress(stage, progress, message, emoji = '') {
             console.log(`🎯 updateProgress: stage="${stage}", progress=${progress}, message="${message}", emoji="${emoji}"`);
             
-            const fullMessage = emoji ? `${emoji} ${message}` : message;
-            showProgress(fullMessage, progress);
+            // Use message without emoji for cleaner UI
+            showProgress(message, progress);
             
             // NYTT: Også oppdater progress indikator
             progressUpdated = true;
-            console.log(`✅ Progress updated: ${fullMessage} (${progress}%)`);
+            console.log(`✅ Progress updated: ${message} (${progress}%)`);
         }
     </script>
 </body>

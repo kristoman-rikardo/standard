@@ -586,6 +586,11 @@ class PromptManager:
                     # Send token via SSE if available
                     if sse_manager and session_id:
                         sse_manager.send_token(session_id, token)
+                        # Hint stream keep-alive by interleaving lightweight comments for proxies
+                        try:
+                            sse_manager.send_event(session_id, 'noop', {"_": 1})
+                        except Exception:
+                            pass
                     
                     yield token
                     

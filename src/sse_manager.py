@@ -64,8 +64,14 @@ class SSEManager:
             session_id = f"sse_{int(time.time())}_{str(uuid.uuid4())[:8]}"
             
         with self.session_lock:
+            # Always create a fresh session to avoid old messages
+            if session_id in self.sessions:
+                # Clean up old session first
+                logger.info(f"Replacing existing SSE session: {session_id}")
+                del self.sessions[session_id]
+            
             self.sessions[session_id] = SSESession(session_id)
-            logger.info(f"Created SSE session: {session_id}")
+            logger.info(f"Created fresh SSE session: {session_id}")
             
         return session_id
     
@@ -94,7 +100,10 @@ class SSEManager:
     def send_event(self, session_id: str, event_type: str, data: Dict[str, Any]):
         """Send SSE event to session"""
         session = self.get_session(session_id)
-        if not session or not session.is_active:
+        if not session:
+            logger.warning(f"Attempted to send to non-existent session: {session_id}")
+            return False
+        if not session.is_active:
             logger.warning(f"Attempted to send to inactive session: {session_id}")
             return False
             
@@ -105,7 +114,7 @@ class SSEManager:
         }
         
         session.add_message(event_data)
-        logger.debug(f"Sent {event_type} event to session {session_id}")
+        logger.info(f"📤 Sent {event_type} event to session {session_id} (total messages: {len(session.messages)})")
         return True
     
     def send_progress(self, session_id: str, stage: ProgressStage, message: str, progress: int, emoji: str = ""):
@@ -134,6 +143,12 @@ class SSEManager:
         """Send error message"""
         return self.send_event(session_id, 'error', {
             'error': error_message
+        })
+    
+    def send_conversation_id(self, session_id: str, conversation_id: str):
+        """Send conversation ID to session"""
+        return self.send_event(session_id, 'conversation_id', {
+            'conversation_id': conversation_id
         })
     
     def close_session(self, session_id: str):
@@ -167,11 +182,13 @@ def create_sse_response(session_id: str) -> Response:
         
         # Send initial connection confirmation
         yield f"data: {json.dumps({'type': 'connected', 'session_id': session_id})}\n\n"
+        # Padding line (SSE comment) to defeat proxy/browser buffering and open the stream
+        yield ": " + (" " * 2048) + "\n\n"
         
         message_index = 0
         timeout_counter = 0
         max_timeout = 300  # 5 minutter total timeout (økt fra 2 minutter)
-        keepalive_interval = 15  # Send keep-alive hver 15. sekund (redusert fra 30)
+        keepalive_interval = 10  # Hyppigere keep-alive for stabile forbindelser
         last_activity_check = time.time()
         
         try:
@@ -190,16 +207,25 @@ def create_sse_response(session_id: str) -> Response:
                         last_activity_check = time.time()
                     timeout_counter = 0  # Reset timeout on activity
                 else:
-                    # Send keepalive every 15 seconds (hyppigere)
+                    # Send keepalive every interval
                     if timeout_counter % keepalive_interval == 0 and timeout_counter > 0:
+                        # Keepalive som data-event (støtter frontendens logikk)
                         yield f"data: {json.dumps({'type': 'keepalive', 'timestamp': time.time(), 'session_active': session.is_active})}\n\n"
-                    
-                    time.sleep(0.5)  # Sjekk hver 0.5 sekund
+                        # Kommentar-keepalive (no-op for EventSource, men hjelper mot buffering)
+                        yield ": keepalive\n\n"
+
+                    time.sleep(0.05)  # Hyppigere polling for jevnere strøm
                     timeout_counter += 0.5
                     
                     # NYTT: Sjekk om session er blitt inaktiv
                     if not session.is_active:
                         logger.info(f"🔚 SSE: Session {session_id} became inactive, ending stream")
+                        break
+                    
+                    # NYTT: Sjekk om vi har ventet for lenge uten meldinger
+                    if timeout_counter > 30 and message_index == 0:  # 30 sekunder uten noen meldinger
+                        logger.warning(f"⚠️ SSE: Session {session_id} has been waiting for messages for 30s, sending error")
+                        yield f"data: {json.dumps({'type': 'error', 'error': 'Ingen meldinger mottatt fra server. Prøv å spørre på nytt.'})}\n\n"
                         break
                     
         except GeneratorExit:
@@ -217,7 +243,7 @@ def create_sse_response(session_id: str) -> Response:
         event_stream(),
         mimetype='text/event-stream',
         headers={
-            'Cache-Control': 'no-cache',
+            'Cache-Control': 'no-cache, no-transform',
             'Connection': 'keep-alive',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Headers': 'Cache-Control',

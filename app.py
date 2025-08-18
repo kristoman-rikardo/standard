@@ -721,6 +721,10 @@ def api_query_stream():
         try:
             sse_manager.create_session(session_id)
             app.logger.info(f"✅ STREAM API: SSE session created: {session_id}")
+            
+            # Wait a moment to ensure session is fully initialized
+            time.sleep(0.1)
+            
         except Exception as e:
             app.logger.error(f"❌ STREAM API: Failed to create SSE session: {e}")
             return jsonify({'error': f'Failed to create session: {e}'}), 500
@@ -822,17 +826,20 @@ def api_query_stream():
                                 app.logger.info(f"💾 ASYNC: Adding to existing conversation {conversation_id}")
                                 session_manager.add_to_conversation(
                                     conversation_id,
-                                    query_req.question, 
+                                    query_req.question,
                                     result.get('answer', '')
                                 )
                             else:
                                 # Create new conversation
                                 app.logger.info(f"💾 ASYNC: Creating new conversation")
-                                new_conversation_id = session_manager.save_interaction(
-                                    query_req.question, 
+                                new_conversation_id = session_manager.create_conversation(
+                                    query_req.question,
                                     result.get('answer', '')
                                 )
                                 app.logger.info(f"✅ ASYNC: Created new conversation {new_conversation_id}")
+                                
+                                # Send conversation_id to frontend via SSE
+                                sse_manager.send_conversation_id(session_id, new_conversation_id)
                             
                             app.logger.info(f"✅ ASYNC: Saved conversation to database for session {session_id}")
                             
@@ -869,6 +876,9 @@ def api_query_stream():
             'stream_url': f'/api/stream/{session_id}',
             'status': 'started',
             'debug': debug_enabled,
+            
+            # Add conversation_id if available
+            'conversation_id': data.get('conversation_id'),
             
             # Token configuration information
             'token_config': {
@@ -954,6 +964,24 @@ def get_conversation(conversation_id):
     except Exception as e:
         app.logger.error(f"Get conversation error: {e}")
         return jsonify({'error': 'Could not fetch conversation'}), 500
+
+@app.route('/api/conversations/<conversation_id>', methods=['DELETE'])
+def delete_conversation(conversation_id):
+    """Slett en samtale"""
+    from src.session_manager import session_manager
+    
+    try:
+        success = session_manager.delete_conversation(conversation_id)
+        
+        if success:
+            app.logger.info(f"✅ Deleted conversation: {conversation_id}")
+            return jsonify({'message': 'Conversation deleted successfully'})
+        else:
+            return jsonify({'error': 'Conversation not found'}), 404
+            
+    except Exception as e:
+        app.logger.error(f"Delete conversation error: {e}")
+        return jsonify({'error': 'Could not delete conversation'}), 500
 
 @app.route('/api/conversations', methods=['POST'])
 def create_new_conversation():

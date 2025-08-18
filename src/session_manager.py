@@ -378,6 +378,28 @@ Tittel:"""
         """Alias for add_message_to_conversation - for konsistens med app.py"""
         return self.add_message_to_conversation(conversation_id, question, answer)
     
+    def delete_conversation(self, conversation_id: str) -> bool:
+        """Delete a conversation and all its messages"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                # Delete all messages in the conversation
+                conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+                
+                # Delete the conversation
+                cursor = conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+                
+                # Check if conversation was actually deleted
+                if cursor.rowcount > 0:
+                    print(f"✅ Deleted conversation {conversation_id}")
+                    return True
+                else:
+                    print(f"⚠️ Conversation {conversation_id} not found")
+                    return False
+                    
+        except Exception as e:
+            print(f"❌ Error deleting conversation {conversation_id}: {e}")
+            return False
+    
     def get_conversation_history(self, limit: int = 50) -> List[Conversation]:
         """Hent samtalehistorikk sortert etter dato"""
         with sqlite3.connect(self.db_path) as conn:

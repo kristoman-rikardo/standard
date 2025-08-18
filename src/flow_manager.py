@@ -607,6 +607,7 @@ class FlowManager:
             
             # STEG 8: Elasticsearch Search (nytt steg)
             if session_id:
+                self.logger.info(f"📡 Sending search progress to session {session_id}")
                 sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Søker i standarddatabase...", 70, "🔎")
                 # Mark routing as completed
                 sse_manager.send_progress(session_id, ProgressStage.ROUTING, "Søkestrategi valgt!", 100, "🛣️")
