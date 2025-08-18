@@ -16,6 +16,7 @@ Flask==3.0.0
 Werkzeug==3.0.6
 flask-limiter==3.8.0
 gunicorn==21.2.0
+gevent==23.9.1
 
 # OpenAI and AI/ML
 openai==1.57.0

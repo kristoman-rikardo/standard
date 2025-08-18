@@ -182,8 +182,9 @@ def create_sse_response(session_id: str) -> Response:
         
         # Send initial connection confirmation
         yield f"data: {json.dumps({'type': 'connected', 'session_id': session_id})}\n\n"
-        # Padding line (SSE comment) to defeat proxy/browser buffering and open the stream
-        yield ": " + (" " * 2048) + "\n\n"
+        # Enhanced padding for production environments (Railway/Gunicorn) - increased size
+        yield ": " + (" " * 4096) + "\n\n"
+        yield "retry: 1000\n\n"  # Set retry interval to 1 second
         
         message_index = 0
         timeout_counter = 0
@@ -243,11 +244,15 @@ def create_sse_response(session_id: str) -> Response:
         event_stream(),
         mimetype='text/event-stream',
         headers={
-            'Cache-Control': 'no-cache, no-transform',
+            'Cache-Control': 'no-cache, no-store, must-revalidate, no-transform',
             'Connection': 'keep-alive',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Headers': 'Cache-Control',
-            'X-Accel-Buffering': 'no'  # Disable nginx buffering for real-time streaming
+            'X-Accel-Buffering': 'no',  # Disable nginx buffering
+            'X-Proxy-Buffering': 'no',  # Disable proxy buffering
+            'Proxy-Buffering': 'off',   # Additional proxy buffering control
+            'Transfer-Encoding': 'chunked',  # Ensure chunked encoding
+            'Content-Encoding': 'identity'   # Prevent compression
         }
     )
     

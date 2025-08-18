@@ -44,5 +44,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=15s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:$PORT/health || exit 1
 
-# Railway start kommando med eksplisitt shell for miljøvariabel ekspansjon
-CMD /bin/sh -c "exec gunicorn --bind 0.0.0.0:${PORT:-8000} --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-120} --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --preload --access-logfile - --error-logfile - app:app"
+# Railway start kommando med SSE-optimalisert Gunicorn konfigurasjon
+CMD /bin/sh -c "exec gunicorn --bind 0.0.0.0:${PORT:-8000} --workers ${GUNICORN_WORKERS:-1} --worker-class gevent --worker-connections 1000 --timeout ${GUNICORN_TIMEOUT:-300} --keep-alive 5 --max-requests 0 --preload --disable-redirect-access-to-syslog --access-logfile - --error-logfile - --log-level info app:app"
