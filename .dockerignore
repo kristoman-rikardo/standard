@@ -1,27 +1,30 @@
 # Git
 .git
 .gitignore
-.gitattributes
 
-# Documentation
-*.md
-docs/
-PRODUCTION_GUIDE.md
-
-# Development files
-.vscode/
-.cursor/
+# Python
+__pycache__
 *.pyc
-__pycache__/
-.pytest_cache/
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
 .coverage
-.env.example
-
-# Logs
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
 *.log
-logs/
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
 
-# OS generated files
+# OS
 .DS_Store
 .DS_Store?
 ._*
@@ -30,50 +33,30 @@ logs/
 ehthumbs.db
 Thumbs.db
 
-# IDE files
-.idea/
+# IDE
+.vscode
+.idea
 *.swp
 *.swo
 *~
 
-# Temporary files
-tmp/
-temp/
-*.tmp
+# Local development
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+app.pid
+*.backup
 
-# Node modules (if any)
-node_modules/
-npm-debug.log*
+# Logs
+logs/
+*.log
 
-# Python
-*.pyc
-*.pyo
-*.pyd
-__pycache__/
-.Python
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+# Documentation
+README.md
+docs/
 
-# Testing
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-
-# Docker
-Dockerfile*
-docker-compose*.yml
-.dockerignore
-
-# Monitoring (will be mounted as volumes)
-monitoring/
-
-# Nginx config (will be mounted as volume)
-nginx/ 
+# Railway
+railway.toml
+deploy.sh

@@ -26,9 +26,9 @@ WORKDIR /app
 # Kopier requirements først for bedre Docker layer caching
 COPY requirements.txt .
 
-# SIMPLIFIED: Single step installation - no duplicates, dependencies ordered in requirements.txt
+# Install Python dependencies with better error handling
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir --timeout 300 -r requirements.txt
 
 # Kopier applikasjonskode
 COPY . .

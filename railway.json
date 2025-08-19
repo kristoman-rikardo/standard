@@ -1,15 +1,11 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "builder": "DOCKERFILE",
-    "buildCommand": "pip install --no-cache-dir -r requirements.txt"
+    "builder": "DOCKERFILE"
   },
   "deploy": {
-    "build": {
-      "builder": "NIXPACKS"
-    },
     "start": {
-      "command": "python app.py"
+      "command": "gunicorn --bind 0.0.0.0:$PORT --workers 1 --worker-class gevent --worker-connections 1000 --timeout 300 --keep-alive 5 --max-requests 0 --preload --disable-redirect-access-to-syslog --access-logfile - --error-logfile - --log-level info app:app"
     },
     "environment": {
       "PYTHONUNBUFFERED": "1",
@@ -24,7 +20,7 @@
     },
     "ports": [
       {
-        "port": 5000,
+        "port": 8000,
         "type": "HTTP"
       }
     ],
