@@ -4,6 +4,6 @@
     "builder": "DOCKERFILE"
   },
   "deploy": {
-    "startCommand": "gunicorn --bind 0.0.0.0:$PORT --workers 1 --worker-class gevent --worker-connections 1000 --timeout 300 --keep-alive 5 --max-requests 0 --preload --access-logfile - --error-logfile - --log-level info app:app"
+    "startCommand": "gunicorn --bind 0.0.0.0:$PORT --workers 1 --worker-class gevent --worker-connections 1000 --timeout 300 --keep-alive 5 --max-requests 0 --access-logfile - --error-logfile - --log-level info app:app"
   }
 }

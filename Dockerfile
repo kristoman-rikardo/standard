@@ -45,5 +45,5 @@ RUN mkdir -p logs static/css static/js static/img && \
 # HEALTHCHECK --interval=30s --timeout=15s --start-period=10s --retries=3 \
 #     CMD curl -f http://localhost:$PORT/health || exit 1
 
-# Railway start kommando med SSE-optimalisert Gunicorn konfigurasjon
-CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --worker-class gevent --worker-connections 1000 --timeout 300 --keep-alive 5 --max-requests 0 --preload --access-logfile - --error-logfile - --log-level info app:app
+# Railway start kommando med SSE-optimalisert Gunicorn konfigurasjon (uten preload)
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --worker-class gevent --worker-connections 1000 --timeout 300 --keep-alive 5 --max-requests 0 --access-logfile - --error-logfile - --log-level info app:app
