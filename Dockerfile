@@ -38,11 +38,12 @@ RUN mkdir -p logs static/css static/js static/img && \
     chmod -R 755 /app
 
 # Railway bruker automatisk PORT miljøvariabel - dokumentasjon
-EXPOSE 8000
+# Railway setter PORT automatisk - ikke hardkode port
+# EXPOSE $PORT
 
-# Health check forenklet - Railway vil automatisk sjekke på riktig port
-HEALTHCHECK --interval=30s --timeout=15s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:$PORT/health || exit 1
+# Railway håndterer health checks automatisk
+# HEALTHCHECK --interval=30s --timeout=15s --start-period=10s --retries=3 \
+#     CMD curl -f http://localhost:$PORT/health || exit 1
 
 # Railway start kommando med SSE-optimalisert Gunicorn konfigurasjon
-CMD /bin/sh -c "exec gunicorn --bind 0.0.0.0:${PORT:-8000} --workers ${GUNICORN_WORKERS:-1} --worker-class gevent --worker-connections 1000 --timeout ${GUNICORN_TIMEOUT:-300} --keep-alive 5 --max-requests 0 --preload --disable-redirect-access-to-syslog --access-logfile - --error-logfile - --log-level info app:app"
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --worker-class gevent --worker-connections 1000 --timeout 300 --keep-alive 5 --max-requests 0 --preload --access-logfile - --error-logfile - --log-level info app:app

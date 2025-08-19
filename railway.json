@@ -4,45 +4,6 @@
     "builder": "DOCKERFILE"
   },
   "deploy": {
-    "start": {
-      "command": "gunicorn --bind 0.0.0.0:$PORT --workers 1 --worker-class gevent --worker-connections 1000 --timeout 300 --keep-alive 5 --max-requests 0 --preload --disable-redirect-access-to-syslog --access-logfile - --error-logfile - --log-level info app:app"
-    },
-    "environment": {
-      "PYTHONUNBUFFERED": "1",
-      "PYTHONDONTWRITEBYTECODE": "1",
-      "FLASK_ENV": "production",
-      "GUNICORN_WORKERS": "1",
-      "GUNICORN_TIMEOUT": "300",
-      "GUNICORN_WORKER_CLASS": "gevent",
-      "GUNICORN_WORKER_CONNECTIONS": "1000",
-      "EMBEDDING_API_ENDPOINT": "INTERNAL",
-      "AI_TITLES_ENABLED": "true"
-    },
-    "ports": [
-      {
-        "port": 8000,
-        "type": "HTTP"
-      }
-    ],
-    "healthcheck": {
-      "path": "/health",
-      "interval": 30,
-      "timeout": 10,
-      "retries": 3
-    }
-  },
-  "environments": {
-    "production": {
-      "variables": {
-        "FLASK_ENV": "production",
-        "PYTHONUNBUFFERED": "1",
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "GUNICORN_WORKERS": "1",
-        "GUNICORN_TIMEOUT": "300",
-        "GUNICORN_WORKER_CLASS": "gevent",
-        "GUNICORN_WORKER_CONNECTIONS": "1000",
-        "AI_TITLES_ENABLED": "true"
-      }
-    }
+    "startCommand": "gunicorn --bind 0.0.0.0:$PORT --workers 1 --worker-class gevent --worker-connections 1000 --timeout 300 --keep-alive 5 --max-requests 0 --preload --access-logfile - --error-logfile - --log-level info app:app"
   }
-} 
+}
