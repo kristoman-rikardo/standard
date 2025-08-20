@@ -20,6 +20,10 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMBEDDING_API_ENDPOINT = os.getenv("EMBEDDING_API_ENDPOINT")
 EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", "")
 
+# Keep-alive configuration for preventing cold starts
+EMBEDDING_KEEPALIVE_ENABLED = os.getenv("EMBEDDING_KEEPALIVE_ENABLED", "true").lower() == "true"
+EMBEDDING_KEEPALIVE_INTERVAL_MINUTES = int(os.getenv("EMBEDDING_KEEPALIVE_INTERVAL_MINUTES", "10"))
+
 # OpenAI Configuration with MAXIMUM token support and deterministic temperature
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.0"))  # Deterministic responses

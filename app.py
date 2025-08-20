@@ -192,14 +192,20 @@ async def warmup_services():
         try:
             app.logger.info("🔥 Starting service warmup...")
             
-            # Warmup embedding API with a simple query - make it optional
+            # Warmup embedding API with a simple query - enhanced with timeout handling
             try:
                 embedding_client = flow_manager.elasticsearch_client
+                app.logger.info("🔄 Starting embedding API warmup (this may take up to 60s if cold)...")
+                import time
+                start_time = time.time()
+                
                 warmup_embedding = await asyncio.get_event_loop().run_in_executor(
                     None, embedding_client.get_embeddings_from_api, "warmup query", False
                 )
+                
+                warmup_time = time.time() - start_time
                 if warmup_embedding:
-                    app.logger.info("✅ Embedding API warmed up successfully")
+                    app.logger.info(f"✅ Embedding API warmed up successfully in {warmup_time:.1f}s")
                 else:
                     app.logger.info("ℹ️ Embedding API warmup skipped (endpoint not available/configured)")
             except Exception as embedding_error:
@@ -244,6 +250,14 @@ if flow_manager:
     warmup_thread = threading.Thread(target=run_warmup, daemon=True)
     warmup_thread.start()
     app.logger.info("🚀 Background warmup started")
+    
+    # Start embedding keep-alive service
+    try:
+        from src.embedding_keepalive import embedding_keepalive
+        embedding_keepalive.start()
+        app.logger.info("🔄 Embedding keep-alive service started")
+    except Exception as e:
+        app.logger.warning(f"⚠️ Failed to start embedding keep-alive service: {e}")
 
 class QueryRequest(BaseModel):
     """Pydantic model for validating query requests"""

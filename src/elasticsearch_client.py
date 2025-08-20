@@ -21,6 +21,7 @@ from src.config import (
     OPENAI_API_KEY
 )
 from src.debug_utils import log_step_start, log_step_end, log_error, debug_print
+from src.embedding_keepalive import embedding_keepalive
 
 @dataclass
 class EmbeddingCacheEntry:
@@ -189,6 +190,9 @@ class ElasticsearchClient:
                         
                         if debug:
                             debug_print("Embeddings", f"External API success on attempt {attempt + 1}: {len(vectors)} dimensional vector (cached)")
+                        
+                        # Update keep-alive activity timestamp
+                        embedding_keepalive.update_activity()
                         
                         return vectors
                     else:
