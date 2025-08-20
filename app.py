@@ -773,7 +773,7 @@ def api_query_stream():
                     asyncio.set_event_loop(loop)
                     app.logger.info(f"🔄 ASYNC: Created event loop for session {session_id}")
                     
-                    # Sett timeout for hele prosessen (maksimum 45 sekunder for komplekse spørsmål)
+                    # Sett timeout for hele prosessen (maksimum 90 sekunder for komplekse spørsmål)
                     try:
                         if not flow_manager:
                             sse_manager.send_error(session_id, "FlowManager not available - external services may be unavailable")
@@ -788,7 +788,7 @@ def api_query_stream():
                                 session_id, 
                                 debug_enabled
                             ),
-                            timeout=45.0  # Økt til 45 sekunder for komplekse spørsmål
+                            timeout=90.0  # Økt til 90 sekunder for komplekse spørsmål
                         )
                         result = loop.run_until_complete(result)
                         
@@ -844,11 +844,23 @@ def api_query_stream():
                             if conversation_id:
                                 # Add to existing conversation
                                 app.logger.info(f"💾 ASYNC: Adding to existing conversation {conversation_id}")
+                                
+                                # Sjekk om dette er første melding (for å oppdatere tittel fra "Ny samtale")
+                                conversation = session_manager.get_conversation_by_id(conversation_id)
+                                is_first_message = conversation and conversation.message_count == 0
+                                
                                 session_manager.add_to_conversation(
                                     conversation_id,
                                     query_req.question,
                                     result.get('answer', '')
                                 )
+                                
+                                # Hvis dette var første melding, send oppdatert tittel til frontend
+                                if is_first_message:
+                                    updated_conversation = session_manager.get_conversation_by_id(conversation_id)
+                                    if updated_conversation:
+                                        sse_manager.send_conversation_title_update(session_id, conversation_id, updated_conversation.title)
+                                        app.logger.info(f"✅ ASYNC: Sent title update '{updated_conversation.title}' for conversation {conversation_id}")
                             else:
                                 # Create new conversation
                                 app.logger.info(f"💾 ASYNC: Creating new conversation")
@@ -1002,6 +1014,33 @@ def delete_conversation(conversation_id):
     except Exception as e:
         app.logger.error(f"Delete conversation error: {e}")
         return jsonify({'error': 'Could not delete conversation'}), 500
+
+@app.route('/api/conversations/placeholder', methods=['POST'])
+def create_conversation_placeholder():
+    """Opprett en placeholder-samtale som vises i sidebaren før første spørsmål stilles"""
+    from src.session_manager import session_manager
+    
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id') or request.headers.get('X-Session-ID')
+        
+        if not session_id:
+            return jsonify({'error': 'Session ID required'}), 400
+        
+        # Opprett placeholder-samtale med tittel "Ny samtale"
+        conversation_id = session_manager.create_placeholder_conversation()
+        
+        app.logger.info(f"✅ Created placeholder conversation: {conversation_id} for session: {session_id}")
+        
+        return jsonify({
+            'conversation_id': conversation_id,
+            'title': 'Ny samtale',
+            'session_id': session_id
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Create placeholder conversation error: {e}")
+        return jsonify({'error': 'Could not create placeholder conversation'}), 500
 
 @app.route('/api/conversations', methods=['POST'])
 def create_new_conversation():

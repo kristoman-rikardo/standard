@@ -358,21 +358,52 @@ Tittel:"""
         
         return conversation_id
     
+    def create_placeholder_conversation(self) -> str:
+        """Opprett en placeholder-samtale som vises i sidebaren før første spørsmål stilles"""
+        conversation_id = str(uuid.uuid4())
+        title = "Ny samtale"
+        
+        with sqlite3.connect(self.db_path) as conn:
+            # Opprett samtale uten meldinger
+            conn.execute("""
+                INSERT INTO conversations (id, title, created_at, last_message_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """, (conversation_id, title))
+        
+        print(f"✅ Created placeholder conversation: {conversation_id}")
+        return conversation_id
+    
     def add_message_to_conversation(self, conversation_id: str, question: str, answer: str):
         """Legg til melding til eksisterende samtale"""
         with sqlite3.connect(self.db_path) as conn:
+            # Sjekk om dette er første melding i samtalen
+            cursor = conn.execute("""
+                SELECT COUNT(*) FROM messages WHERE conversation_id = ?
+            """, (conversation_id,))
+            message_count = cursor.fetchone()[0]
+            
             # Legg til melding
             conn.execute("""
                 INSERT INTO messages (conversation_id, question, answer, timestamp)
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
             """, (conversation_id, question, answer))
             
-            # Oppdater samtale timestamp
-            conn.execute("""
-                UPDATE conversations 
-                SET last_message_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (conversation_id,))
+            # Hvis dette er første melding, oppdater tittelen fra "Ny samtale" til en riktig tittel
+            if message_count == 0:
+                new_title = self.generate_conversation_title_improved(question, answer)
+                conn.execute("""
+                    UPDATE conversations 
+                    SET title = ?, last_message_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (new_title, conversation_id))
+                print(f"✅ Updated conversation title from 'Ny samtale' to '{new_title}' for {conversation_id}")
+            else:
+                # Bare oppdater timestamp
+                conn.execute("""
+                    UPDATE conversations 
+                    SET last_message_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (conversation_id,))
     
     def add_to_conversation(self, conversation_id: str, question: str, answer: str):
         """Alias for add_message_to_conversation - for konsistens med app.py"""

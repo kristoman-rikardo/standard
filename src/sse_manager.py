@@ -151,6 +151,13 @@ class SSEManager:
             'conversation_id': conversation_id
         })
     
+    def send_conversation_title_update(self, session_id: str, conversation_id: str, title: str):
+        """Send oppdatert samtale-tittel til frontend"""
+        return self.send_event(session_id, 'conversation_title_update', {
+            'conversation_id': conversation_id, 
+            'title': title
+        })
+    
     def close_session(self, session_id: str):
         """Close and remove session"""
         with self.session_lock:
@@ -188,8 +195,8 @@ def create_sse_response(session_id: str) -> Response:
         
         message_index = 0
         timeout_counter = 0
-        max_timeout = 300  # 5 minutter total timeout (økt fra 2 minutter)
-        keepalive_interval = 10  # Hyppigere keep-alive for stabile forbindelser
+        max_timeout = 1800  # 30 minutter total timeout - lang nok til at brukeren kan være inaktiv
+        keepalive_interval = 30  # Send keepalive hvert 30. sekund for å holde forbindelsen åpen
         last_activity_check = time.time()
         
         try:
@@ -208,12 +215,11 @@ def create_sse_response(session_id: str) -> Response:
                         last_activity_check = time.time()
                     timeout_counter = 0  # Reset timeout on activity
                 else:
-                    # Send keepalive every interval
+                    # Send keepalive every interval - men ikke spam frontend
                     if timeout_counter % keepalive_interval == 0 and timeout_counter > 0:
-                        # Keepalive som data-event (støtter frontendens logikk)
-                        yield f"data: {json.dumps({'type': 'keepalive', 'timestamp': time.time(), 'session_active': session.is_active})}\n\n"
-                        # Kommentar-keepalive (no-op for EventSource, men hjelper mot buffering)
+                        # Stille keepalive som ikke trigger frontend-logikk
                         yield ": keepalive\n\n"
+                        logger.debug(f"🔄 SSE: Keepalive sent for session {session_id} after {timeout_counter}s")
 
                     time.sleep(0.05)  # Hyppigere polling for jevnere strøm
                     timeout_counter += 0.5
@@ -223,11 +229,8 @@ def create_sse_response(session_id: str) -> Response:
                         logger.info(f"🔚 SSE: Session {session_id} became inactive, ending stream")
                         break
                     
-                    # NYTT: Sjekk om vi har ventet for lenge uten meldinger
-                    if timeout_counter > 30 and message_index == 0:  # 30 sekunder uten noen meldinger
-                        logger.warning(f"⚠️ SSE: Session {session_id} has been waiting for messages for 30s, sending error")
-                        yield f"data: {json.dumps({'type': 'error', 'error': 'Ingen meldinger mottatt fra server. Prøv å spørre på nytt.'})}\n\n"
-                        break
+                    # FJERNET: Ikke timeout på tomme sesjoner - la dem være åpne for fremtidige spørsmål
+                    # Vi sender bare keepalive og holder forbindelsen åpen
                     
         except GeneratorExit:
             logger.info(f"🔌 SSE: Client disconnected for session {session_id}")

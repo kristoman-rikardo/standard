@@ -492,13 +492,12 @@ class FlowManager:
             
             sanitized_question = validation_result.sanitized_input
             
-            # Mark validation completed
-            if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.VALIDATION, "Inndata validert!", 100, "🔒")
+            # Validation completed - continue to next step
+            # Removed progress update to avoid jumping to 100%
             
             # STEG 3: Analyse
             if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.ANALYSIS, "Analyserer spørsmål...", 20, "🔍")
+                sse_manager.send_progress(session_id, ProgressStage.ANALYSIS, "Analyserer spørsmål...", 15, "🔍")
             
             optimization_task = self.prompt_manager.optimize_semantic(sanitized_question, conversation_memory)
             analysis_task = self.prompt_manager.analyze_question(sanitized_question, conversation_memory)
@@ -507,13 +506,12 @@ class FlowManager:
             result["optimized"] = optimized
             result["analysis"] = analysis
             
-            # Mark analysis completed
-            if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.ANALYSIS, "Spørsmål analysert!", 100, "🔍")
+            # Analysis completed - continue to next step
+            # Removed progress update to avoid jumping to 100%
             
             # STEG 4: Extraktion
             if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.EXTRACTION, "Trekker ut standarder...", 30, "📊")
+                sse_manager.send_progress(session_id, ProgressStage.EXTRACTION, "Trekker ut standarder...", 25, "📊")
             
             # Bruk eksisterende logikk fra process_query
             if analysis.lower() == "memory":
@@ -545,13 +543,11 @@ class FlowManager:
             
             # STEG 5: Routing
             if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.ROUTING, f"Velger søkestrategi: {route}...", 40, "🛣️")
-                # Mark extraction as completed
-                sse_manager.send_progress(session_id, ProgressStage.EXTRACTION, "Standarder uttrukket!", 100, "📊")
+                sse_manager.send_progress(session_id, ProgressStage.ROUTING, "Velger søkestrategi...", 35, "🛣️")
             
             # STEG 6: Embeddings (nytt steg)
             if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Genererer embeddings...", 50, "🧮")
+                sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Genererer embeddings...", 45, "🧮")
             
             # Generate embeddings
             embeddings = self.elasticsearch_client.get_embeddings_from_api(optimized, debug)
@@ -564,7 +560,7 @@ class FlowManager:
             
             # STEG 7: Query Building (nytt steg)
             if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Bygger søkespørring...", 60, "🔧")
+                sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Bygger søkespørring...", 55, "🔧")
             
             # Build query based on route
             if route == "memory":
@@ -608,9 +604,9 @@ class FlowManager:
             # STEG 8: Elasticsearch Search (nytt steg)
             if session_id:
                 self.logger.info(f"📡 Sending search progress to session {session_id}")
-                sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Søker i standarddatabase...", 70, "🔎")
-                # Mark routing as completed
-                sse_manager.send_progress(session_id, ProgressStage.ROUTING, "Søkestrategi valgt!", 100, "🛣️")
+                sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Søker i standarddatabase...", 65, "🔎")
+                # Mark routing as completed - strategy selected
+                sse_manager.send_progress(session_id, ProgressStage.ROUTING, "Søkestrategi valgt!", 80, "🛣️")
             
             # Execute search
             elasticsearch_response = self.elasticsearch_client.search(query_object, debug)
@@ -625,19 +621,18 @@ class FlowManager:
             
             # STEG 9: Format chunks (nytt steg)
             if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Formaterer søkeresultater...", 80, "📄")
+                sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Formaterer søkeresultater...", 75, "📄")
             
             # Format chunks
             chunks = self.elasticsearch_client.format_chunks(elasticsearch_response, debug)
             result["chunks"] = chunks
             
-            # Mark search completed
-            if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Søk fullført!", 100, "🔎")
+            # Search completed - continue to answer generation
+            # Removed progress update to avoid jumping to 100%
             
             # STEG 10: Svar generering
             if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.ANSWER_GENERATION, "Genererer svar...", 85, "✨")
+                sse_manager.send_progress(session_id, ProgressStage.ANSWER_GENERATION, "Genererer svar...", 100, "✨")
             
             # Stream the answer generation with fallback - chunks is already defined above
             answer_tokens = []
@@ -677,7 +672,7 @@ class FlowManager:
             
             # STEG 11: Fullført
             if session_id:
-                sse_manager.send_progress(session_id, ProgressStage.COMPLETE, "Svar generert!", 100, "✅")
+                # Answer is complete - final_answer event will be sent by the calling function
                 sse_manager.send_final_answer(session_id, answer)
             
             result["processing_time"] = time.time() - start_time

@@ -924,6 +924,11 @@
                         console.log('💬 Conversation ID received:', data.conversation_id);
                         currentConversationId = data.conversation_id;
                         console.log('✅ Updated currentConversationId:', currentConversationId);
+                    } else if (data.type === 'conversation_title_update') {
+                        console.log('📝 Conversation title update received:', data);
+                        // Oppdater tittelen i sidebaren
+                        updateConversationTitleInSidebar(data.conversation_id, data.title);
+                        console.log('✅ Updated conversation title in sidebar:', data.title);
                     } else if (data.type === 'keepalive') {
                         console.log('💓 SSE keepalive received');
                         // Reset timeouts on keepalive
@@ -949,10 +954,17 @@
                 
                 // Don't immediately close on error - let it try to reconnect
                 if (eventSource.readyState === EventSource.CLOSED) {
-                    console.log('🔌 SSE connection closed, will not reconnect');
-                    hideProgress();
-                    addMessageToChat('assistant', 'Tilkoblingen ble avbrutt. Prøv å spørre på nytt.');
-                    resetInput();
+                    console.log('🔌 SSE connection closed');
+                    
+                    // Bare vis feilmelding hvis vi faktisk var i gang med å prosessere
+                    if (progressUpdated || currentAnswer) {
+                        hideProgress();
+                        addMessageToChat('assistant', 'Tilkoblingen ble avbrutt. Prøv å spørre på nytt.');
+                        resetInput();
+                    } else {
+                        // Stille forbindelse uten å vise feil - brukeren var bare inaktiv
+                        console.log('🔌 SSE closed during idle period - no error shown');
+                    }
                 }
                 
                 // FORBEDRET: Intelligent retry logic
@@ -974,9 +986,9 @@
                 } else if (!progressUpdated && !currentAnswer) {
                     console.log('🔄 SSE failed early, trying fallback to sync API...');
                     fallbackToSyncAPI(lastUserMessage);
-                } else if (currentAnswer && currentAnswer.length > 50) {
-                    // We have partial answer, show what we got
-                    console.log('⚠️ SSE disconnected but we have partial answer');
+                } else if (currentAnswer && currentAnswer.length > 50 && progressUpdated) {
+                    // We have partial answer AND we were actively processing, show what we got
+                    console.log('⚠️ SSE disconnected but we have partial answer from active processing');
                     addMessageToChat('assistant', 'Tilkoblingen ble avbrutt, men her er det jeg rakk å finne:\n\n' + currentAnswer);
                     resetInput();
                 } else {
@@ -1470,40 +1482,90 @@
         });
 
         // New conversation button handler - FORBEDRET SESSION MANAGEMENT
-        function newConversation() {
+        async function newConversation() {
             console.log('🔄 Starting NEW conversation...');
             
-            // Clear existing chat
-            const messagesArea = document.getElementById('messages-area');
-            if (messagesArea) {
-                clearMessagesButKeepWelcome();
+            try {
+                // Clear existing chat
+                const messagesArea = document.getElementById('messages-area');
+                if (messagesArea) {
+                    clearMessagesButKeepWelcome();
+                }
+                
+                // Show welcome message
+                const welcomeMessage = document.getElementById('welcome-message');
+                if (welcomeMessage) {
+                    welcomeMessage.classList.remove('hidden');
+                }
+                
+                // Reset conversation state
+                currentConversationId = null;
+                
+                // VIKTIG: Generer HELT NY session_id for å skille fra forrige memory
+                currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+                localStorage.setItem('standardgpt_session_id', currentSessionId);
+                console.log('🆔 NEW conversation: Generated fresh session ID:', currentSessionId);
+                
+                // VIKTIG: Explicit clear av conversation memory på backend
+                clearConversationMemoryExplicit();
+                
+                // Remove active state from all conversations
+                document.querySelectorAll('.conversation-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                
+                // Create a new conversation placeholder in database immediately
+                const response = await fetch('/api/conversations/placeholder', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': currentSessionId
+                    },
+                    body: JSON.stringify({
+                        session_id: currentSessionId
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    currentConversationId = data.conversation_id;
+                    console.log('✅ Created conversation placeholder:', currentConversationId);
+                    
+                    // Reload conversations to show "Ny samtale" in sidebar
+                    await loadConversations();
+                    
+                    // Mark the new conversation as active
+                    const conversationItems = document.querySelectorAll('.conversation-item');
+                    conversationItems.forEach(item => {
+                        if (item.dataset.conversationId === currentConversationId) {
+                            item.classList.add('active');
+                        }
+                    });
+                } else {
+                    console.error('❌ Failed to create conversation placeholder');
+                }
+                
+                console.log('✅ New conversation started with clean memory');
+                
+            } catch (error) {
+                console.error('❌ Error creating new conversation:', error);
             }
-            
-            // Show welcome message
-            const welcomeMessage = document.getElementById('welcome-message');
-            if (welcomeMessage) {
-                welcomeMessage.classList.remove('hidden');
-            }
-            
-            // Reset conversation state
-            currentConversationId = null;
-            
-            // VIKTIG: Generer HELT NY session_id for å skille fra forrige memory
-            currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
-            localStorage.setItem('standardgpt_session_id', currentSessionId);
-            console.log('🆔 NEW conversation: Generated fresh session ID:', currentSessionId);
-            
-            // VIKTIG: Explicit clear av conversation memory på backend
-            clearConversationMemoryExplicit();
-            
-            // Remove active state from all conversations
-            document.querySelectorAll('.conversation-item').forEach(item => {
-                item.classList.remove('active');
-            });
-            
-            console.log('✅ New conversation started with clean memory');
         }
         
+        // Update conversation title in sidebar
+        function updateConversationTitleInSidebar(conversationId, newTitle) {
+            const conversationItems = document.querySelectorAll('.conversation-item');
+            conversationItems.forEach(item => {
+                if (item.dataset.conversationId === conversationId) {
+                    const titleElement = item.querySelector('.conversation-content .conversation-title');
+                    if (titleElement) {
+                        titleElement.textContent = newTitle;
+                        console.log(`✅ Updated title for conversation ${conversationId}: "${newTitle}"`);
+                    }
+                }
+            });
+        }
+
         // NYTT: Explicit clear av conversation memory på backend
         async function clearConversationMemoryExplicit() {
             if (!currentSessionId) return;
@@ -1570,12 +1632,44 @@
         function updateProgress(stage, progress, message, emoji = '') {
             console.log(`🎯 updateProgress: stage="${stage}", progress=${progress}, message="${message}", emoji="${emoji}"`);
             
-            // Use message without emoji for cleaner UI
-            showProgress(message, progress);
+            // Frontend progress mapping for smooth progression
+            let frontendMessage = message;
+            let frontendProgress = progress;
+            
+            // Fix problematic messages and progression
+            if (message.includes('Søkestrategi valgt!')) {
+                // Change to "Velger søkestrategi..." and set to 80%
+                frontendMessage = 'Velger søkestrategi...';
+                frontendProgress = 80;
+            } else if (message.includes('Genererer svar...')) {
+                // Set to 100% for final step
+                frontendProgress = 100;
+            } else if (message.includes('Starter behandling')) {
+                frontendProgress = 5;
+            } else if (message.includes('Validerer inndata')) {
+                frontendProgress = 10;
+            } else if (message.includes('Analyserer spørsmål')) {
+                frontendProgress = 15;
+            } else if (message.includes('Trekker ut standarder')) {
+                frontendProgress = 25;
+            } else if (message.includes('Velger søkestrategi')) {
+                frontendProgress = 35;
+            } else if (message.includes('Genererer embeddings')) {
+                frontendProgress = 45;
+            } else if (message.includes('Bygger søkespørring')) {
+                frontendProgress = 55;
+            } else if (message.includes('Søker i standarddatabase')) {
+                frontendProgress = 65;
+            } else if (message.includes('Formaterer søkeresultater')) {
+                frontendProgress = 75;
+            }
+            
+            // Use cleaned message without emoji for cleaner UI
+            showProgress(frontendMessage, frontendProgress);
             
             // NYTT: Også oppdater progress indikator
             progressUpdated = true;
-            console.log(`✅ Progress updated: ${message} (${progress}%)`);
+            console.log(`✅ Progress updated: ${frontendMessage} (${frontendProgress}%)`);
         }
     </script>
 </body>
