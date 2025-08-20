@@ -189,14 +189,14 @@ def create_sse_response(session_id: str) -> Response:
         
         # Send initial connection confirmation
         yield f"data: {json.dumps({'type': 'connected', 'session_id': session_id})}\n\n"
-        # Enhanced padding for production environments (Railway/Gunicorn) - increased size
-        yield ": " + (" " * 4096) + "\n\n"
-        yield "retry: 1000\n\n"  # Set retry interval to 1 second
+        # Optimized padding for smooth streaming - reduced size for better performance
+        yield ": " + (" " * 1024) + "\n\n"
+        yield "retry: 500\n\n"  # Faster retry for smoother reconnection
         
         message_index = 0
         timeout_counter = 0
         max_timeout = 1800  # 30 minutter total timeout - lang nok til at brukeren kan være inaktiv
-        keepalive_interval = 30  # Send keepalive hvert 30. sekund for å holde forbindelsen åpen
+        keepalive_interval = 60  # Send keepalive hvert 60. sekund - mindre hyppig for bedre ytelse
         last_activity_check = time.time()
         
         try:
@@ -215,14 +215,13 @@ def create_sse_response(session_id: str) -> Response:
                         last_activity_check = time.time()
                     timeout_counter = 0  # Reset timeout on activity
                 else:
-                    # Send keepalive every interval - men ikke spam frontend
+                    # Send keepalive every interval - optimized for performance
                     if timeout_counter % keepalive_interval == 0 and timeout_counter > 0:
-                        # Stille keepalive som ikke trigger frontend-logikk
-                        yield ": keepalive\n\n"
-                        logger.debug(f"🔄 SSE: Keepalive sent for session {session_id} after {timeout_counter}s")
+                        # Minimal keepalive - just a comment, no data events
+                        yield ": \n\n"
 
-                    time.sleep(0.05)  # Hyppigere polling for jevnere strøm
-                    timeout_counter += 0.5
+                    time.sleep(0.01)  # Meget hyppig polling for maksimal responsivitet
+                    timeout_counter += 0.1
                     
                     # NYTT: Sjekk om session er blitt inaktiv
                     if not session.is_active:
