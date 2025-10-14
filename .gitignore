@@ -193,4 +193,4 @@ temp/
 # Configuration files with secrets
 config_local.py
 local_config.py
-secret_config.py 
+secret_config.py conversations.db*
