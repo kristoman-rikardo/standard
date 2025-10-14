@@ -194,3 +194,4 @@ temp/
 config_local.py
 local_config.py
 secret_config.py conversations.db*
+conversations.db*
