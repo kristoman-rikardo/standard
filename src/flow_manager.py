@@ -44,7 +44,7 @@ class InputValidator:
         r'import\s+',                 # Python imports
         r'__\w+__',                   # Python dunder methods
         r'\.\./',                     # Path traversal
-        r'[<>"\']',                   # Basic HTML/SQL chars
+        r'[<>]',                        # Basic angle brackets (tags) blocked; quotes allowed
     ]
     
     @staticmethod
@@ -66,8 +66,8 @@ class InputValidator:
             if re.search(pattern, question_lower, re.IGNORECASE):
                 return ValidationResult(False, "Spørsmål inneholder ikke-tillatte tegn eller mønstre")
         
-        # Character validation - allow Norwegian characters
-        allowed_pattern = r'^[a-zA-ZæøåÆØÅ0-9\s\-\.\,\?\!\:\;\(\)\[\]\/\+\*\=\%\&\#\@\_\~\`\^\$\|\\]*$'
+        # Character validation - allow Norwegian characters and safe special characters (incl. quotes)
+        allowed_pattern = r'^[a-zA-ZæøåÆØÅ0-9\s\-\.\,\?\!\:\;\(\)\[\]\/\+\*\=\%\&\#\@\_\~\`\^\$\|\\\'\"]*$'
         if not re.match(allowed_pattern, question):
             return ValidationResult(False, "Spørsmål inneholder ikke-tillatte spesialtegn")
         

@@ -647,6 +647,7 @@
         let isProcessing = false;
         let eventSource = null;
         let currentSessionId = null;
+        let currentUserId = null;
         
         // NYE VARIABLER for conversation memory tracking
         let lastUserMessage = '';
@@ -660,7 +661,14 @@
                 currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
                 localStorage.setItem('standardgpt_session_id', currentSessionId);
             }
+            // Generate or retrieve user ID (per user isolation across devices if shared)
+            currentUserId = localStorage.getItem('standardgpt_user_id');
+            if (!currentUserId) {
+                currentUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 10)}`;
+                localStorage.setItem('standardgpt_user_id', currentUserId);
+            }
             console.log('🆔 Using session ID:', currentSessionId);
+            console.log('👤 Using user ID:', currentUserId);
             
             loadConversations();
             setupInputValidation();
@@ -746,6 +754,7 @@
             try {
                 console.log('🚀 Sending question:', question);
                 console.log('🆔 Using session ID:', currentSessionId);
+                console.log('👤 Using user ID:', currentUserId);
                 
                 // VIKTIG: Generer ALLTID ny session ID for hvert spørsmål for å unngå blanding av svar
                 currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}_${Math.floor(Math.random() * 10000)}`;
@@ -757,7 +766,8 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Session-ID': currentSessionId
+                        'X-Session-ID': currentSessionId,
+                        'X-User-ID': currentUserId
                     },
                     body: JSON.stringify({
                         question: question,
@@ -1009,6 +1019,7 @@
             try {
                 console.log('🔄 Fallback: Using sync API for question:', question.substring(0, 50) + '...');
                 console.log('🔄 Fallback: Using session ID:', currentSessionId);
+                console.log('👤 Using user ID:', currentUserId);
                 
                 // VIKTIG: Sørg for at vi har session ID også i fallback
                 if (!currentSessionId) {
@@ -1024,7 +1035,8 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Session-ID': currentSessionId
+                        'X-Session-ID': currentSessionId,
+                        'X-User-ID': currentUserId
                     },
                     body: JSON.stringify({
                         question: question,
@@ -1186,7 +1198,11 @@
         // Load conversations
         async function loadConversations() {
             try {
-                const response = await fetch('/api/conversations');
+                const response = await fetch('/api/conversations', {
+                    headers: {
+                        'X-User-ID': currentUserId
+                    }
+                });
                 if (!response.ok) {
                     throw new Error(`Failed to load conversations: ${response.status}`);
                 }
@@ -1295,7 +1311,11 @@
         // Load conversation
         async function loadConversation(conversationId) {
             try {
-                const response = await fetch(`/api/conversations/${conversationId}`);
+                const response = await fetch(`/api/conversations/${conversationId}`, {
+                    headers: {
+                        'X-User-ID': currentUserId
+                    }
+                });
                 if (!response.ok) {
                     throw new Error(`Failed to load conversation: ${response.status}`);
                 }
@@ -1341,7 +1361,8 @@
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
-                                'X-Session-ID': currentSessionId
+                                'X-Session-ID': currentSessionId,
+                                'X-User-ID': currentUserId
                             },
                             body: JSON.stringify({
                                 conversation_id: conversationId,
@@ -1441,7 +1462,10 @@
             
             try {
                 const response = await fetch(`/api/conversations/${conversationId}`, {
-                    method: 'DELETE'
+                    method: 'DELETE',
+                    headers: {
+                        'X-User-ID': currentUserId
+                    }
                 });
                 
                 if (!response.ok) {
@@ -1519,7 +1543,8 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Session-ID': currentSessionId
+                        'X-Session-ID': currentSessionId,
+                        'X-User-ID': currentUserId
                     },
                     body: JSON.stringify({
                         session_id: currentSessionId
@@ -1577,7 +1602,8 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Session-ID': currentSessionId
+                        'X-Session-ID': currentSessionId,
+                        'X-User-ID': currentUserId
                     }
                 });
                 
@@ -1607,7 +1633,8 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-Session-ID': currentSessionId
+                        'X-Session-ID': currentSessionId,
+                        'X-User-ID': currentUserId
                     },
                     body: JSON.stringify({
                         user_message: userMessage,

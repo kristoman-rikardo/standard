@@ -29,8 +29,7 @@ import openai
 # Import our config from ROOT level (not src/)
 from config import get_config, HealthCheck, SecurityConfig
 
-# Import our custom Elasticsearch client and FlowManager
-from src.flow_manager import FlowManager
+# Defer FlowManager import to runtime to avoid heavy deps at startup
 import asyncio
 import threading
 
@@ -64,6 +63,14 @@ conversation_lock = threading.Lock()  # Add thread safety
 # Cache storage
 cache: Dict[str, Any] = {}
 cache_expiry: Dict[str, datetime] = {}
+
+def get_user_id(request_obj) -> str:
+    """Get per-user identifier from header or cookie; fallback to anonymous ID."""
+    # Support both header casings
+    user_id = request_obj.headers.get('X-User-ID') or request_obj.headers.get('X-User-Id')
+    if user_id and isinstance(user_id, str) and len(user_id.strip()) >= 6:
+        return user_id.strip()
+    return request_obj.cookies.get('user_id') or f"anon_{request_obj.remote_addr}"
 
 def get_session_id(request_obj):
     """Extract session ID from request headers or generate new one"""
@@ -179,6 +186,7 @@ def cache_response(ttl_seconds=3600):
 
 # Initialize FlowManager instead of the old service
 try:
+    from src.flow_manager import FlowManager
     flow_manager = FlowManager()
     app.logger.info("✅ FlowManager initialized successfully")
 except Exception as e:
@@ -435,11 +443,15 @@ def api_query():
         if not data:
             return jsonify({'error': 'No JSON data provided'}), 400
         
+        # Per-user scoping
+        user_id = get_user_id(request)
+        
         # Get or generate session ID
         session_id = get_session_id(request)
         conversation_memory = get_conversation_memory(session_id)
         
         app.logger.info(f"📥 Received data: {data}")
+        app.logger.info(f"👤 User ID: {user_id}")
         app.logger.info(f"🔑 Session ID: {session_id}")
         app.logger.info(f"🧠 Conversation memory length: {len(conversation_memory)} chars")
         
@@ -460,18 +472,18 @@ def api_query():
         if not flow_manager:
             return jsonify({'error': 'FlowManager not available'}), 503
         
-        # Check cache first (include session_id in cache key for memory-based queries)
-        query_cache_key = cache_key(f"query:{session_id}:{sanitized_question}")
+        # Check cache first (include session_id and user_id in cache key)
+        query_cache_key = cache_key(f"query:{user_id}:{session_id}:{sanitized_question}")
         cached_response = get_from_cache(query_cache_key)
         if cached_response and not app.debug:  # Skip cache in debug mode
             app.logger.info("🚀 Returning cached response")
             cached_response['from_cache'] = True
             cached_response['processing_time'] = time.time() - start_time
             cached_response['session_id'] = session_id
+            cached_response['user_id'] = user_id
             return jsonify(cached_response)
         
         # Process query through FlowManager with conversation memory
-        # Optimize debug setting: only enable in development environment
         enable_debug = app.debug and app.config.get('FLASK_ENV') != 'production'
         
         try:
@@ -489,7 +501,8 @@ def api_query():
                 'error': f'Processing failed: {str(e)}',
                 'processing_time': time.time() - start_time,
                 'success': False,
-                'session_id': session_id
+                'session_id': session_id,
+                'user_id': user_id
             }), 500
         
         # Calculate processing time
@@ -498,8 +511,17 @@ def api_query():
         # Get the answer for memory storage
         final_answer = result.get('answer', 'Kunne ikke generere svar')
         
-        # Update conversation memory
+        # Update conversation memory (in-memory per session)
         update_conversation_memory(session_id, sanitized_question, final_answer)
+        
+        # Persist to per-user conversation storage if a conversation_id is provided
+        try:
+            conversation_id = data.get('conversation_id')
+            if conversation_id:
+                from src.session_manager import session_manager
+                session_manager.add_to_conversation(conversation_id, sanitized_question, final_answer, user_id)
+        except Exception as e:
+            app.logger.warning(f"⚠️ Could not persist message to conversation for user {user_id}: {e}")
         
         # Prepare comprehensive debug information
         debug_info = {
@@ -555,6 +577,7 @@ def api_query():
             'success': True,
             'from_cache': False,
             'session_id': session_id,
+            'user_id': user_id,
             
             # Token configuration information
             'token_config': {
@@ -586,7 +609,7 @@ def api_query():
             }
         }
         
-        # Cache the response (include session for memory-based caching)
+        # Cache the response (include session and user)
         set_cache(query_cache_key, response_data, current_app.config.get('CACHE_TIMEOUT', 3600))
         
         # Log successful processing
@@ -607,7 +630,8 @@ def api_query():
             'error': error_message,
             'processing_time': processing_time,
             'success': False,
-            'session_id': get_session_id(request)
+            'session_id': get_session_id(request),
+            'user_id': get_user_id(request)
         }), 500
 
 
@@ -715,6 +739,8 @@ def api_query_stream():
         data = request.get_json()
         app.logger.info(f"🚀 STREAM API: Request data: {data}")
         
+        user_id = get_user_id(request)
+        
         # Valider input
         try:
             query_req = QueryRequest(**data)
@@ -745,7 +771,7 @@ def api_query_stream():
         # VIKTIG: Bruk samme session ID for SSE streaming
         session_id = frontend_session_id
         
-        app.logger.info(f"🔑 STREAM API: Using unified session ID: {session_id}")
+        app.logger.info(f"🔑 STREAM API: Using unified session ID: {session_id} for user {user_id}")
         
         # Opprett SSE session med samme ID
         try:
@@ -860,18 +886,19 @@ def api_query_stream():
                                 app.logger.info(f"💾 ASYNC: Adding to existing conversation {conversation_id}")
                                 
                                 # Sjekk om dette er første melding (for å oppdatere tittel fra "Ny samtale")
-                                conversation = session_manager.get_conversation_by_id(conversation_id)
+                                conversation = session_manager.get_conversation_by_id(conversation_id, user_id)
                                 is_first_message = conversation and conversation.message_count == 0
                                 
                                 session_manager.add_to_conversation(
                                     conversation_id,
                                     query_req.question,
-                                    result.get('answer', '')
+                                    result.get('answer', ''),
+                                    user_id
                                 )
                                 
                                 # Hvis dette var første melding, send oppdatert tittel til frontend
                                 if is_first_message:
-                                    updated_conversation = session_manager.get_conversation_by_id(conversation_id)
+                                    updated_conversation = session_manager.get_conversation_by_id(conversation_id, user_id)
                                     if updated_conversation:
                                         sse_manager.send_conversation_title_update(session_id, conversation_id, updated_conversation.title)
                                         app.logger.info(f"✅ ASYNC: Sent title update '{updated_conversation.title}' for conversation {conversation_id}")
@@ -880,7 +907,8 @@ def api_query_stream():
                                 app.logger.info(f"💾 ASYNC: Creating new conversation")
                                 new_conversation_id = session_manager.create_conversation(
                                     query_req.question,
-                                    result.get('answer', '')
+                                    result.get('answer', ''),
+                                    user_id
                                 )
                                 app.logger.info(f"✅ ASYNC: Created new conversation {new_conversation_id}")
                                 
@@ -925,6 +953,7 @@ def api_query_stream():
             
             # Add conversation_id if available
             'conversation_id': data.get('conversation_id'),
+            'user_id': user_id,
             
             # Token configuration information
             'token_config': {
@@ -958,7 +987,8 @@ def get_conversations():
     from src.session_manager import session_manager
     
     try:
-        conversations = session_manager.get_conversation_history()
+        user_id = get_user_id(request)
+        conversations = session_manager.get_conversation_history(user_id=user_id)
         
         # Konverter til JSON format
         result = []
@@ -983,11 +1013,12 @@ def get_conversation(conversation_id):
     from src.session_manager import session_manager
     
     try:
-        conversation = session_manager.get_conversation_by_id(conversation_id)
+        user_id = get_user_id(request)
+        conversation = session_manager.get_conversation_by_id(conversation_id, user_id)
         if not conversation:
             return jsonify({'error': 'Conversation not found'}), 404
         
-        messages = session_manager.get_conversation_messages(conversation_id)
+        messages = session_manager.get_conversation_messages(conversation_id, user_id)
         
         result = {
             'id': conversation.id,
@@ -1017,7 +1048,8 @@ def delete_conversation(conversation_id):
     from src.session_manager import session_manager
     
     try:
-        success = session_manager.delete_conversation(conversation_id)
+        user_id = get_user_id(request)
+        success = session_manager.delete_conversation(conversation_id, user_id)
         
         if success:
             app.logger.info(f"✅ Deleted conversation: {conversation_id}")
@@ -1036,15 +1068,16 @@ def create_conversation_placeholder():
     
     try:
         data = request.get_json()
+        user_id = get_user_id(request)
         session_id = data.get('session_id') or request.headers.get('X-Session-ID')
         
         if not session_id:
             return jsonify({'error': 'Session ID required'}), 400
         
         # Opprett placeholder-samtale med tittel "Ny samtale"
-        conversation_id = session_manager.create_placeholder_conversation()
+        conversation_id = session_manager.create_placeholder_conversation(user_id)
         
-        app.logger.info(f"✅ Created placeholder conversation: {conversation_id} for session: {session_id}")
+        app.logger.info(f"✅ Created placeholder conversation: {conversation_id} for user: {user_id} session: {session_id}")
         
         return jsonify({
             'conversation_id': conversation_id,
@@ -1087,6 +1120,8 @@ def save_conversation_memory():
         
         if not data or 'user_message' not in data or 'system_response' not in data:
             return jsonify({'error': 'Missing required fields: user_message, system_response'}), 400
+        
+        user_id = get_user_id(request)
         
         user_message = data['user_message'].strip()
         system_response = data['system_response'].strip()

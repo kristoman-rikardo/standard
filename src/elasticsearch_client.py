@@ -18,7 +18,8 @@ from src.config import (
     ELASTICSEARCH_PASSWORD,
     EMBEDDING_API_ENDPOINT,
     EMBEDDING_API_KEY,
-    OPENAI_API_KEY
+    OPENAI_API_KEY,
+    ELASTICSEARCH_API_ENDPOINT
 )
 from src.debug_utils import log_step_start, log_step_end, log_error, debug_print
 from src.embedding_keepalive import embedding_keepalive
@@ -360,8 +361,11 @@ class ElasticsearchClient:
         start_time = time.time()
         
         try:
-            # Use the full Elasticsearch Cloud URL with _search endpoint
-            url = f"{self.url}/{self.index}/_search"
+            # Support explicit API endpoint override if provided
+            if ELASTICSEARCH_API_ENDPOINT:
+                url = ELASTICSEARCH_API_ENDPOINT
+            else:
+                url = f"{self.url}/{self.index}/_search"
             
             # Log the query being sent
             if debug:
@@ -402,8 +406,15 @@ class ElasticsearchClient:
             return result
             
         except Exception as e:
+            # If ES is unreachable, return an empty result so the pipeline can still generate an answer
             log_error("Elasticsearch Search", str(e), debug)
-            raise
+            if debug:
+                debug_print("Elasticsearch", "Returning empty hits due to connection/search error")
+            return {
+                "took": int((time.time() - start_time) * 1000),
+                "timed_out": True,
+                "hits": {"total": {"value": 0, "relation": "eq"}, "max_score": 0, "hits": []}
+            }
 
     def format_chunks(self, elasticsearch_response: Dict, debug: bool = True) -> str:
         """

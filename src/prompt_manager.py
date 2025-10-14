@@ -76,7 +76,7 @@ PROMPT_CONFIGS = {
         system_message="You optimize questions for textual search by extracting key terms. Provide comprehensive optimization with detailed reasoning."
     ),
     "answer": PromptConfig(
-        max_tokens=4000,  # Maximum tokens for comprehensive answers
+        max_tokens=1200,  # Lower for latency while keeping quality
         temperature=0.0,  # Deterministic answers
         ttl_seconds=900,   # Cache for 15 minutes (answers change more)
         system_message="You are a knowledgeable assistant providing detailed technical answers based on Norwegian standards. Always provide comprehensive, accurate information with specific details from the provided context."
@@ -426,7 +426,7 @@ class PromptManager:
         """
         try:
             # Intelligent chunk truncation to avoid token limits
-            max_chunk_length = 15000  # Leave room for question and memory
+            max_chunk_length = 6000  # Reduce to speed up generation
             if len(chunks) > max_chunk_length:
                 # Truncate but try to keep complete chunks
                 chunk_sections = chunks.split('\n\n')
@@ -449,7 +449,7 @@ class PromptManager:
             
             # Use MAXIMUM token configuration for all answers
             config = PromptConfig(
-                max_tokens=4000,  # Maximum tokens for comprehensive answers
+                max_tokens=1200,  # Reduced
                 temperature=0.0,  # Deterministic answers
                 ttl_seconds=900,
                 system_message="You are a knowledgeable assistant providing detailed technical answers based on Norwegian standards. Always provide comprehensive, accurate information with specific details from the provided context. Use the full token limit to provide thorough, detailed responses."
@@ -457,7 +457,7 @@ class PromptManager:
             
             if force_detailed:
                 config = PromptConfig(
-                    max_tokens=4000,  # Maximum tokens for detailed answers
+                    max_tokens=1500,  # Slightly higher for forced detailed
                     temperature=0.0,  # Deterministic answers
                     ttl_seconds=900,
                     system_message="You are a knowledgeable assistant providing detailed technical answers based on Norwegian standards. Always provide comprehensive, accurate information with specific details from the provided context. Use the full token limit to provide thorough, detailed responses with extensive explanations."
@@ -494,7 +494,7 @@ class PromptManager:
                     model=OPENAI_MODEL_DEFAULT,
                     messages=fallback_messages,
                     temperature=0.0,  # Deterministic
-                    max_tokens=4000,  # Maximum tokens
+                    max_tokens=1200,  # Reduced
                     stream=False
                 )
                 
@@ -531,7 +531,7 @@ class PromptManager:
         """
         try:
             # Intelligent chunk truncation to avoid token limits
-            max_chunk_length = 15000  # Leave room for question and memory
+            max_chunk_length = 6000  # Reduced to speed up streaming
             if len(chunks) > max_chunk_length:
                 # Truncate but try to keep complete chunks
                 chunk_sections = chunks.split('\n\n')
@@ -555,7 +555,7 @@ class PromptManager:
             
             # Use MAXIMUM token configuration for streaming
             config = PromptConfig(
-                max_tokens=4000,  # Maximum tokens for comprehensive streaming answers
+                max_tokens=1200,  # Reduced for latency
                 temperature=0.0,  # Deterministic streaming
                 ttl_seconds=900,
                 system_message="You are a knowledgeable assistant providing detailed technical answers based on Norwegian standards. Always provide comprehensive, accurate information with specific details from the provided context. Use the full token limit to provide thorough, detailed responses."

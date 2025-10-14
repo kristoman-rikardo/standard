@@ -11,6 +11,7 @@ load_dotenv()
 # Elasticsearch Cloud Configuration
 ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "https://my-elasticsearch-project-f89a7b.es.eastus.azure.elastic.cloud:443")
 ELASTICSEARCH_INDEX = os.getenv("ELASTICSEARCH_INDEX", "standard_prod")
+ELASTICSEARCH_API_ENDPOINT = os.getenv("ELASTICSEARCH_API_ENDPOINT", "")
 
 # API Keys - SECURITY: All keys must come from environment variables
 ELASTICSEARCH_API_KEY = os.getenv("ELASTICSEARCH_API_KEY")

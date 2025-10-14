@@ -67,6 +67,17 @@ class SessionManager:
             else:
                 print("⚠️ OpenAI ikke tilgjengelig - bruker regelbaserte titler")
     
+    def _connect(self):
+        """Get a SQLite connection configured for concurrency (WAL)."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+            conn.execute("PRAGMA busy_timeout=5000;")
+        except Exception:
+            pass
+        return conn
+    
     def init_database(self):
         """Initialiser database tabeller"""
         with sqlite3.connect(self.db_path) as conn:
@@ -100,19 +111,39 @@ class SessionManager:
                 CREATE INDEX IF NOT EXISTS idx_messages_conversation 
                 ON messages(conversation_id, timestamp DESC)
             """)
+            
+            # Migrate: add user_id columns if missing
+            try:
+                conn.execute("ALTER TABLE conversations ADD COLUMN user_id TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE messages ADD COLUMN user_id TEXT")
+            except Exception:
+                pass
+            
+            # Helpful indexes for user scoping
+            try:
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, last_message_at DESC)")
+            except Exception:
+                pass
+            try:
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(conversation_id, user_id, timestamp DESC)")
+            except Exception:
+                pass
     
     async def generate_ai_title(self, question: str, answer: str) -> Optional[str]:
         """Generer intelligent tittel ved hjelp av OpenAI med caching og optimalisering"""
         if not self.ai_titles_enabled or not self.openai_client:
             return None
-            
+        
         # Simpel cache basert på spørsmålshash
         cache_key = hash(question[:100])  # Bruk første 100 tegn for caching
         if cache_key in self.title_cache:
             cached_title = self.title_cache[cache_key]
             print(f"🔄 Bruker cached AI-tittel: {cached_title}")
             return cached_title
-            
+        
         try:
             # Optimalisert innhold for å spare tokens
             question_preview = question[:150] if question else ""
@@ -137,7 +168,7 @@ Gode eksempler:
 - "Ventilasjon boligkrav"
 
 Tittel:"""
-
+            
             response = await self.openai_client.chat.completions.create(
                 model=os.getenv("OPENAI_MODEL", "gpt-4o"),
                 messages=[{"role": "user", "content": prompt}],
@@ -173,7 +204,7 @@ Tittel:"""
         except Exception as e:
             print(f"⚠️ AI tittel feil: {e}")
             return None
-            
+        
         return None
 
     def extract_standards_improved(self, question: str, answer: str) -> List[str]:
@@ -338,55 +369,59 @@ Tittel:"""
         
         return "Ny chat"
     
-    def create_conversation(self, question: str, answer: str) -> str:
-        """Opprett ny samtale og returner ID"""
+    def create_conversation(self, question: str, answer: str, user_id: str) -> str:
+        """Opprett ny samtale og returner ID for gitt bruker"""
         conversation_id = str(uuid.uuid4())
         title = self.generate_conversation_title_improved(question, answer)
         
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             # Opprett samtale
             conn.execute("""
-                INSERT INTO conversations (id, title, created_at, last_message_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """, (conversation_id, title))
+                INSERT INTO conversations (id, title, created_at, last_message_at, user_id)
+                VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+            """, (conversation_id, title, user_id))
             
             # Legg til første melding
             conn.execute("""
-                INSERT INTO messages (conversation_id, question, answer, timestamp)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            """, (conversation_id, question, answer))
+                INSERT INTO messages (conversation_id, question, answer, timestamp, user_id)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
+            """, (conversation_id, question, answer, user_id))
         
         return conversation_id
     
-    def create_placeholder_conversation(self) -> str:
-        """Opprett en placeholder-samtale som vises i sidebaren før første spørsmål stilles"""
+    def create_placeholder_conversation(self, user_id: str) -> str:
+        """Opprett en placeholder-samtale for gitt bruker"""
         conversation_id = str(uuid.uuid4())
         title = "Ny samtale"
         
-        with sqlite3.connect(self.db_path) as conn:
-            # Opprett samtale uten meldinger
+        with self._connect() as conn:
             conn.execute("""
-                INSERT INTO conversations (id, title, created_at, last_message_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """, (conversation_id, title))
+                INSERT INTO conversations (id, title, created_at, last_message_at, user_id)
+                VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+            """, (conversation_id, title, user_id))
         
-        print(f"✅ Created placeholder conversation: {conversation_id}")
+        print(f"✅ Created placeholder conversation for user {user_id}: {conversation_id}")
         return conversation_id
     
-    def add_message_to_conversation(self, conversation_id: str, question: str, answer: str):
-        """Legg til melding til eksisterende samtale"""
-        with sqlite3.connect(self.db_path) as conn:
+    def add_message_to_conversation(self, conversation_id: str, question: str, answer: str, user_id: str):
+        """Legg til melding til eksisterende samtale for gitt bruker"""
+        with self._connect() as conn:
+            # Verify conversation ownership
+            cur = conn.execute("SELECT 1 FROM conversations WHERE id = ? AND user_id = ?", (conversation_id, user_id))
+            if not cur.fetchone():
+                raise ValueError("Conversation not found or access denied")
+            
             # Sjekk om dette er første melding i samtalen
             cursor = conn.execute("""
-                SELECT COUNT(*) FROM messages WHERE conversation_id = ?
-            """, (conversation_id,))
+                SELECT COUNT(*) FROM messages WHERE conversation_id = ? AND user_id = ?
+            """, (conversation_id, user_id))
             message_count = cursor.fetchone()[0]
             
             # Legg til melding
             conn.execute("""
-                INSERT INTO messages (conversation_id, question, answer, timestamp)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            """, (conversation_id, question, answer))
+                INSERT INTO messages (conversation_id, question, answer, timestamp, user_id)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
+            """, (conversation_id, question, answer, user_id))
             
             # Hvis dette er første melding, oppdater tittelen fra "Ny samtale" til en riktig tittel
             if message_count == 0:
@@ -394,54 +429,59 @@ Tittel:"""
                 conn.execute("""
                     UPDATE conversations 
                     SET title = ?, last_message_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (new_title, conversation_id))
+                    WHERE id = ? AND user_id = ?
+                """, (new_title, conversation_id, user_id))
                 print(f"✅ Updated conversation title from 'Ny samtale' to '{new_title}' for {conversation_id}")
             else:
                 # Bare oppdater timestamp
                 conn.execute("""
                     UPDATE conversations 
                     SET last_message_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (conversation_id,))
+                    WHERE id = ? AND user_id = ?
+                """, (conversation_id, user_id))
     
-    def add_to_conversation(self, conversation_id: str, question: str, answer: str):
-        """Alias for add_message_to_conversation - for konsistens med app.py"""
-        return self.add_message_to_conversation(conversation_id, question, answer)
+    def add_to_conversation(self, conversation_id: str, question: str, answer: str, user_id: str):
+        """Alias for add_message_to_conversation med user-scope"""
+        return self.add_message_to_conversation(conversation_id, question, answer, user_id)
     
-    def delete_conversation(self, conversation_id: str) -> bool:
-        """Delete a conversation and all its messages"""
+    def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
+        """Delete a conversation and all its messages for the given user"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                # Delete all messages in the conversation
-                conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+            with self._connect() as conn:
+                # Ensure ownership
+                cur = conn.execute("SELECT 1 FROM conversations WHERE id = ? AND user_id = ?", (conversation_id, user_id))
+                if not cur.fetchone():
+                    print(f"⚠️ Conversation {conversation_id} not found or not owned by user")
+                    return False
+                
+                # Delete all messages in the conversation for this user
+                conn.execute("DELETE FROM messages WHERE conversation_id = ? AND user_id = ?", (conversation_id, user_id))
                 
                 # Delete the conversation
-                cursor = conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+                cursor = conn.execute("DELETE FROM conversations WHERE id = ? AND user_id = ?", (conversation_id, user_id))
                 
-                # Check if conversation was actually deleted
                 if cursor.rowcount > 0:
-                    print(f"✅ Deleted conversation {conversation_id}")
+                    print(f"✅ Deleted conversation {conversation_id} for user {user_id}")
                     return True
                 else:
-                    print(f"⚠️ Conversation {conversation_id} not found")
+                    print(f"⚠️ Conversation {conversation_id} not found for user {user_id}")
                     return False
-                    
         except Exception as e:
             print(f"❌ Error deleting conversation {conversation_id}: {e}")
             return False
     
-    def get_conversation_history(self, limit: int = 50) -> List[Conversation]:
-        """Hent samtalehistorikk sortert etter dato"""
-        with sqlite3.connect(self.db_path) as conn:
+    def get_conversation_history(self, user_id: str, limit: int = 50) -> List[Conversation]:
+        """Hent samtalehistorikk sortert etter dato for gitt bruker"""
+        with self._connect() as conn:
             cursor = conn.execute("""
                 SELECT c.id, c.title, c.created_at, c.last_message_at, COUNT(m.id) as message_count
                 FROM conversations c
-                LEFT JOIN messages m ON c.id = m.conversation_id
+                LEFT JOIN messages m ON c.id = m.conversation_id AND m.user_id = c.user_id
+                WHERE c.user_id = ?
                 GROUP BY c.id, c.title, c.created_at, c.last_message_at
                 ORDER BY c.last_message_at DESC
                 LIMIT ?
-            """, (limit,))
+            """, (user_id, limit))
             
             conversations = []
             for row in cursor.fetchall():
@@ -455,15 +495,20 @@ Tittel:"""
             
             return conversations
     
-    def get_conversation_messages(self, conversation_id: str) -> List[Message]:
-        """Hent alle meldinger i en samtale"""
-        with sqlite3.connect(self.db_path) as conn:
+    def get_conversation_messages(self, conversation_id: str, user_id: str) -> List[Message]:
+        """Hent alle meldinger i en samtale for gitt bruker"""
+        with self._connect() as conn:
+            # Ensure ownership
+            cur = conn.execute("SELECT 1 FROM conversations WHERE id = ? AND user_id = ?", (conversation_id, user_id))
+            if not cur.fetchone():
+                return []
+            
             cursor = conn.execute("""
                 SELECT id, conversation_id, question, answer, timestamp
                 FROM messages
-                WHERE conversation_id = ?
+                WHERE conversation_id = ? AND user_id = ?
                 ORDER BY timestamp ASC
-            """, (conversation_id,))
+            """, (conversation_id, user_id))
             
             messages = []
             for row in cursor.fetchall():
@@ -481,7 +526,7 @@ Tittel:"""
         """Rydd opp gamle samtaler (standard: 7 dager)"""
         cutoff_date = datetime.now() - timedelta(days=days)
         
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             # Slett gamle meldinger først (foreign key constraint)
             cursor = conn.execute("""
                 DELETE FROM messages 
@@ -503,16 +548,16 @@ Tittel:"""
             
             return deleted_conversations, deleted_messages
     
-    def get_conversation_by_id(self, conversation_id: str) -> Optional[Conversation]:
-        """Hent spesifikk samtale ved ID"""
-        with sqlite3.connect(self.db_path) as conn:
+    def get_conversation_by_id(self, conversation_id: str, user_id: str) -> Optional[Conversation]:
+        """Hent spesifikk samtale ved ID for gitt bruker"""
+        with self._connect() as conn:
             cursor = conn.execute("""
                 SELECT c.id, c.title, c.created_at, c.last_message_at, COUNT(m.id) as message_count
                 FROM conversations c
-                LEFT JOIN messages m ON c.id = m.conversation_id
-                WHERE c.id = ?
+                LEFT JOIN messages m ON c.id = m.conversation_id AND m.user_id = c.user_id
+                WHERE c.id = ? AND c.user_id = ?
                 GROUP BY c.id, c.title, c.created_at, c.last_message_at
-            """, (conversation_id,))
+            """, (conversation_id, user_id))
             
             row = cursor.fetchone()
             if row:
@@ -543,22 +588,23 @@ Tittel:"""
         if not self.ai_titles_enabled:
             print("⚠️ AI-titler ikke aktivert")
             return False
-            
+        
         try:
             # Hent første melding i samtalen
-            messages = self.get_conversation_messages(conversation_id)
+            # Merk: Dette krever også user_id i praksis; denne metoden brukes ikke i offentlige endepunkt
+            messages = self.get_conversation_messages(conversation_id, user_id="__internal__")
             if not messages:
                 print("⚠️ Ingen meldinger funnet for samtale")
                 return False
-                
+            
             first_message = messages[0]
             
             # Generer ny AI-tittel
             new_title = await self.generate_ai_title(first_message.question, first_message.answer)
             
             if new_title:
-                # Oppdater tittelen i databasen
-                with sqlite3.connect(self.db_path) as conn:
+                # Oppdater tittelen i databasen (uten bruker-sjekk for intern bruk)
+                with self._connect() as conn:
                     conn.execute("""
                         UPDATE conversations 
                         SET title = ?
@@ -580,7 +626,8 @@ Tittel:"""
         if not self.ai_titles_enabled:
             return {"error": "AI-titler ikke aktivert"}
         
-        conversations = self.get_conversation_history(limit)
+        # Denne funksjonen beholdes uendret for enkelhets skyld
+        conversations = self.get_conversation_history(user_id="__internal__", limit=limit)
         results = {"updated": 0, "failed": 0, "skipped": 0}
         
         print(f"🔄 Oppdaterer titler for {len(conversations)} samtaler...")

@@ -81,7 +81,7 @@ def create_query(standard_numbers: list, question: str, embeddings: list = None)
     # If we have valid embeddings, use script_score, otherwise use simple bool query
     if embeddings and any(x != 0.0 for x in embeddings):
         query_object = {
-            "size": 80,  # FIXED: Consistent chunk size across all query types
+            "size": 40,  # Reduced for latency; still enough for quality
             "query": {
                 "script_score": {
                     "query": {
@@ -103,7 +103,7 @@ def create_query(standard_numbers: list, question: str, embeddings: list = None)
     else:
         # Fallback to simple bool query without embeddings
         query_object = {
-            "size": 80,  # FIXED: Consistent chunk size across all query types
+            "size": 40,  # Reduced for latency; still enough for quality
             "query": {
                 "bool": {
                     "should": wildcard_queries,
