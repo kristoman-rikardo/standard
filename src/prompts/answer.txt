@@ -30,4 +30,4 @@ Basert på dette skal du:
 
 - Answer in English if the user asks the question in English
 
-- Dersom informasjonen ikke finnes i utdragene, si det tydelig og foreslå at brukeren bør konsultere standarden direkte.
+- Dersom informasjonen ikke finnes i utdragene, sier du fra om dette tydelig. 

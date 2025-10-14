@@ -51,6 +51,11 @@ class Config:
     LOG_FILE = os.environ.get('LOG_FILE', 'standardgpt.log')
     LOG_MAX_BYTES = int(os.environ.get('LOG_MAX_BYTES', '10485760'))  # 10MB
     LOG_BACKUP_COUNT = int(os.environ.get('LOG_BACKUP_COUNT', '5'))
+
+    # UI password protection (simple cookie gate)
+    UI_PASSWORD = os.environ.get('UI_PASSWORD', 'standard2025')
+    UI_AUTH_COOKIE_NAME = os.environ.get('UI_AUTH_COOKIE_NAME', 'ui_auth')
+    UI_AUTH_COOKIE_MAX_AGE_DAYS = int(os.environ.get('UI_AUTH_COOKIE_MAX_AGE_DAYS', '30'))
     
     # Performance
     RESPONSE_TIMEOUT = int(os.environ.get('RESPONSE_TIMEOUT', '30'))

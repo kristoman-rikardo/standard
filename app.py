@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from flask import Flask, request, jsonify, render_template, current_app
+from flask import Flask, request, jsonify, render_template, current_app, redirect, url_for, make_response
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from pydantic import BaseModel, Field, validator
@@ -303,6 +303,24 @@ def before_request():
     # Log request details in debug mode
     if app.debug:
         app.logger.debug(f"Request: {request.method} {request.path} from {request.remote_addr}")
+
+    # Simple UI password protection for non-API routes
+    try:
+        # Skip protection for API, static, login/logout and health/status endpoints
+        open_paths = ['/login', '/logout', '/health', '/api/status', '/favicon.ico']
+        if request.path.startswith('/api') or request.endpoint == 'static' or request.path in open_paths:
+            return
+
+        cookie_name = app.config.get('UI_AUTH_COOKIE_NAME', 'ui_auth')
+        cookie_val = request.cookies.get(cookie_name)
+        expected_token = hashlib.sha256((app.config.get('UI_PASSWORD', 'standard2025') + app.config.get('SECRET_KEY', '')).encode()).hexdigest()
+        if cookie_val != expected_token:
+            # Not authenticated — redirect to login with next path
+            next_path = request.path
+            return redirect(url_for('login', next=next_path))
+    except Exception as e:
+        # Fail-open for API stability; log and continue
+        app.logger.debug(f"Auth check skipped due to error: {e}")
 
 
 @app.after_request
@@ -1230,6 +1248,47 @@ def catch_all(path):
     
     # Serve main app for all other paths
     return render_template('index.html')
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Simple password login to protect the UI"""
+    try:
+        cookie_name = app.config.get('UI_AUTH_COOKIE_NAME', 'ui_auth')
+        next_path = request.args.get('next', '/')
+        if request.method == 'POST':
+            data = request.form or request.get_json(silent=True) or {}
+            password = data.get('password', '').strip()
+            if password == app.config.get('UI_PASSWORD', 'standard2025'):
+                token = hashlib.sha256((password + app.config.get('SECRET_KEY', '')).encode()).hexdigest()
+                resp = make_response(redirect(next_path or '/'))
+                max_age = 60 * 60 * 24 * int(app.config.get('UI_AUTH_COOKIE_MAX_AGE_DAYS', 30))
+                resp.set_cookie(
+                    cookie_name,
+                    token,
+                    max_age=max_age,
+                    secure=app.config.get('SESSION_COOKIE_SECURE', True),
+                    httponly=True,
+                    samesite=app.config.get('SESSION_COOKIE_SAMESITE', 'Lax')
+                )
+                return resp
+            else:
+                return render_template('login.html', error='Feil passord', next=next_path), 401
+        
+        # GET
+        return render_template('login.html', next=next_path)
+    except Exception as e:
+        app.logger.error(f"Login error: {e}")
+        return render_template('login.html', error='Teknisk feil, prøv igjen'), 500
+
+
+@app.route('/logout')
+def logout():
+    """Clear auth cookie and redirect to login"""
+    cookie_name = app.config.get('UI_AUTH_COOKIE_NAME', 'ui_auth')
+    resp = make_response(redirect(url_for('login')))
+    resp.delete_cookie(cookie_name)
+    return resp
 
 
 @app.errorhandler(429)
