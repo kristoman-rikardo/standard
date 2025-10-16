@@ -835,27 +835,9 @@
             let retryCount = 0;
             const maxRetries = 3;
             
-            // FORBEDRET: Mye lengre timeout for komplekse spørsmål
-            const connectionTimeout = setTimeout(() => {
-                if (!hasReceivedData && !progressUpdated) {
-                    console.error('⏰ SSE connection timeout - ingen data mottatt');
-                    eventSource.close();
-                    hideProgress();
-                    addMessageToChat('assistant', 'Tilkoblingen tok for lang tid å etablere. Prøver automatisk fallback...');
-                    fallbackToSyncAPI(lastUserMessage);
-                }
-            }, 90000); // Økt til 90 sekunder for Railway ustabilitet
-            
-            // FORBEDRET: Timeout for hele prosessen
-            const processingTimeout = setTimeout(() => {
-                if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
-                    console.error('⏰ SSE processing timeout - fullføres ikke');
-                    eventSource.close();
-                    hideProgress();
-                    addMessageToChat('assistant', 'Prosesseringen tok for lang tid. Prøver en enklere tilnærming...');
-                    fallbackToSyncAPI(lastUserMessage);
-                }
-            }, 180000); // 3 minutter total timeout for embedding-generering
+            // Ingen bruker-synlige tidsavbrudd: vi fjerner timeouts for å unngå støy
+            const connectionTimeout = null;
+            const processingTimeout = null;
             
             eventSource.onopen = function(event) {
                 console.log('✅ SSE connection opened successfully');
@@ -865,7 +847,7 @@
             
             eventSource.onmessage = async function(event) {
                 hasReceivedData = true;
-                clearTimeout(connectionTimeout);
+                if (connectionTimeout) clearTimeout(connectionTimeout);
                 
                 try {
                     const data = JSON.parse(event.data);
@@ -911,7 +893,7 @@
                         } else {
                             updateMessageContent(answerMessageElement, data.answer);
                         }
-                        clearTimeout(processingTimeout);
+                        if (processingTimeout) clearTimeout(processingTimeout);
                         hideProgress();
                         
                         // NYTT: Eksplisitt lagring av conversation memory
@@ -926,7 +908,7 @@
                         }, 500);
                     } else if (data.type === 'error') {
                         console.error('❌ SSE error received:', data.error);
-                        clearTimeout(processingTimeout);
+                        if (processingTimeout) clearTimeout(processingTimeout);
                         hideProgress();
                         addMessageToChat('assistant', `Feil: ${data.error}`);
                         resetInput();
@@ -959,22 +941,17 @@
                 console.error('❌ SSE readyState:', eventSource.readyState);
                 console.error('❌ SSE url:', eventSource.url);
                 
-                clearTimeout(connectionTimeout);
-                clearTimeout(processingTimeout);
+                if (connectionTimeout) clearTimeout(connectionTimeout);
+                if (processingTimeout) clearTimeout(processingTimeout);
                 
                 // Don't immediately close on error - let it try to reconnect
                 if (eventSource.readyState === EventSource.CLOSED) {
                     console.log('🔌 SSE connection closed');
                     
                     // Bare vis feilmelding hvis vi faktisk var i gang med å prosessere
-                    if (progressUpdated || currentAnswer) {
-                        hideProgress();
-                        addMessageToChat('assistant', 'Tilkoblingen ble avbrutt. Prøv å spørre på nytt.');
-                        resetInput();
-                    } else {
-                        // Stille forbindelse uten å vise feil - brukeren var bare inaktiv
-                        console.log('🔌 SSE closed during idle period - no error shown');
-                    }
+                    // Stille håndtering uten bruker-melding
+                    hideProgress();
+                    resetInput();
                 }
                 
                 // FORBEDRET: Intelligent retry logic
@@ -994,16 +971,15 @@
                         startEventStream(sessionId);
                     }, 2000 * retryCount); // Exponential backoff
                 } else if (!progressUpdated && !currentAnswer) {
-                    console.log('🔄 SSE failed early, trying fallback to sync API...');
-                    fallbackToSyncAPI(lastUserMessage);
+                    console.log('🔄 SSE failed early, silently trying fallback to sync API...');
+                    fallbackToSyncAPI(lastUserMessage); // uten brukerfeilmelding
                 } else if (currentAnswer && currentAnswer.length > 50 && progressUpdated) {
                     // We have partial answer AND we were actively processing, show what we got
-                    console.log('⚠️ SSE disconnected but we have partial answer from active processing');
-                    addMessageToChat('assistant', 'Tilkoblingen ble avbrutt, men her er det jeg rakk å finne:\n\n' + currentAnswer);
+                    console.log('⚠️ SSE disconnected but partial answer exists (silent).');
+                    // Behold delvis svar i UI uten ekstra feilmelding
                     resetInput();
                 } else {
-                    console.log('❌ SSE failed after multiple retries');
-                    addMessageToChat('assistant', 'Tilkoblingen ble avbrutt og automatisk gjenoppretting feilet. Prøv å stille spørsmålet på nytt.');
+                    console.log('❌ SSE failed after multiple retries (silent)');
                     resetInput();
                 }
             };

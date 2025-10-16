@@ -66,8 +66,9 @@ class InputValidator:
             if re.search(pattern, question_lower, re.IGNORECASE):
                 return ValidationResult(False, "Spørsmål inneholder ikke-tillatte tegn eller mønstre")
         
-        # Character validation - allow Norwegian characters and safe special characters (incl. quotes)
-        allowed_pattern = r'^[a-zA-ZæøåÆØÅ0-9\s\-\.\,\?\!\:\;\(\)\[\]\/\+\*\=\%\&\#\@\_\~\`\^\$\|\\\'\"]*$'
+        # Character validation - broaden to allow nearly all printable Unicode except angle brackets and control chars
+        # This avoids rejecting quotes, ampersands, pipes, etc., while still blocking HTML tags
+        allowed_pattern = r'^[^\x00-\x1F\x7F<>]+$'
         if not re.match(allowed_pattern, question):
             return ValidationResult(False, "Spørsmål inneholder ikke-tillatte spesialtegn")
         
