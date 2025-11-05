@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="no">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Special Characters Test</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <style>
+        .container { max-width: 800px; margin: 40px auto; padding: 16px; }
+        textarea { width: 100%; min-height: 140px; font-family: monospace; }
+        .btn { margin-top: 12px; }
+        pre { background: #f7f7f7; padding: 12px; white-space: pre-wrap; }
+    </style>
+    </head>
+<body>
+    <div class="container">
+        <h2>Test av spesialtegn i spørsmål</h2>
+        <p>Trykk «Send» for å sende eksempelet til API-et. Denne skal godkjennes selv med linjeskift, kolon og bindestrek.</p>
+        <label for="q">Spørsmål</label>
+        <textarea id="q">NS-EN 13141-8:2006
+
+hva handler om</textarea>
+        <button id="send" class="btn">Send</button>
+        <div id="status" style="margin-top: 12px;"></div>
+        <h3>Svar</h3>
+        <pre id="answer"></pre>
+        <h3>Debug</h3>
+        <pre id="debug"></pre>
+    </div>
+
+    <script>
+    (function(){
+        const btn = document.getElementById('send');
+        const q = document.getElementById('q');
+        const statusEl = document.getElementById('status');
+        const ans = document.getElementById('answer');
+        const dbg = document.getElementById('debug');
+
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            statusEl.textContent = 'Sender...';
+            ans.textContent = '';
+            dbg.textContent = '';
+
+            try {
+                const res = await fetch('/api/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: q.value })
+                });
+                const data = await res.json();
+                statusEl.textContent = `Status: ${res.status}`;
+                if (data.error) {
+                    ans.textContent = `Feil: ${data.error}`;
+                } else {
+                    ans.textContent = data.answer || '';
+                }
+                dbg.textContent = JSON.stringify(data.debug || {}, null, 2);
+            } catch (e) {
+                statusEl.textContent = 'Nettverksfeil';
+                ans.textContent = String(e);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    })();
+    </script>
+</body>
+</html>
+
+

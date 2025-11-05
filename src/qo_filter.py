@@ -53,6 +53,40 @@ queryObject_json = json.dumps(queryObject, ensure_ascii=False)
 Query object builder for standard number filtering
 """
 
+def _standard_variants(standard: str) -> list:
+    """Generate robust wildcard variants for a standard reference."""
+    s = (standard or "").strip()
+    if not s:
+        return []
+    variants = []
+    base = s
+    # Strip year suffix
+    if ':' in base:
+        variants.append(base.split(':', 1)[0].strip())
+    variants.append(base)
+    # Remove NS- prefix
+    variants.append(base.replace('NS-', '', 1).strip())
+    variants.append(base.replace('NS ', '', 1).strip())
+    # Normalize NS-EN -> EN, and hyphen/space variants
+    variants.append(base.replace('NS-EN', 'EN').replace('NS EN', 'EN'))
+    variants.append(base.replace('NS-EN', 'NS EN'))
+    variants.append(base.replace('EN-', 'EN ').replace('NS-', 'NS '))
+    # Numeric-only part
+    import re as _re
+    m = _re.search(r'([0-9][0-9A-Z\-]+)', base)
+    if m:
+        variants.append(m.group(1))
+    # Deduplicate, keep order, drop empty
+    seen = set()
+    out = []
+    for v in variants:
+        v = (v or '').strip()
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
 def create_query(standard_numbers: list, question: str, embeddings: list = None):
     """
     Create query object for standard number filtering
@@ -66,17 +100,18 @@ def create_query(standard_numbers: list, question: str, embeddings: list = None)
         dict: Complete Elasticsearch query object
     """
     
-    # Build wildcard queries for each standard number
+    # Build wildcard queries for each standard number (with robust variants)
     wildcard_queries = []
     for standard in standard_numbers:
-        wildcard_queries.append({
-            "wildcard": {
-                "reference.keyword": {
-                    "value": f"*{standard.strip()}*",
-                    "case_insensitive": True
+        for variant in _standard_variants(standard):
+            wildcard_queries.append({
+                "wildcard": {
+                    "reference.keyword": {
+                        "value": f"*{variant.strip()}*",
+                        "case_insensitive": True
+                    }
                 }
-            }
-        })
+            })
     
     # If we have valid embeddings, use script_score, otherwise use simple bool query
     if embeddings and any(x != 0.0 for x in embeddings):

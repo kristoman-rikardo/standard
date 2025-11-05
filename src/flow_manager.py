@@ -66,15 +66,15 @@ class InputValidator:
             if re.search(pattern, question_lower, re.IGNORECASE):
                 return ValidationResult(False, "Spørsmål inneholder ikke-tillatte tegn eller mønstre")
         
-        # Character validation - broaden to allow nearly all printable Unicode except angle brackets and control chars
-        # This avoids rejecting quotes, ampersands, pipes, etc., while still blocking HTML tags
-        allowed_pattern = r'^[^\x00-\x1F\x7F<>]+$'
-        if not re.match(allowed_pattern, question):
-            return ValidationResult(False, "Spørsmål inneholder ikke-tillatte spesialtegn")
-        
-        # Sanitize input
+        # Normalize whitespace BEFORE character validation to allow newlines/tabs by collapsing them
         sanitized = question.strip()
-        sanitized = re.sub(r'\s+', ' ', sanitized)  # Normalize whitespace
+        sanitized = re.sub(r'\s+', ' ', sanitized)
+
+        # Character validation - allow nearly all printable Unicode except angle brackets and control chars
+        # By validating the normalized string, inputs with newlines (e.g. multi-line questions) are accepted
+        allowed_pattern = r'^[^\x00-\x1F\x7F<>]+$'
+        if not re.match(allowed_pattern, sanitized):
+            return ValidationResult(False, "Spørsmål inneholder ikke-tillatte spesialtegn")
         
         return ValidationResult(True, sanitized_input=sanitized)
     
@@ -85,13 +85,12 @@ class InputValidator:
             return ValidationResult(True, sanitized_input=[])
         
         sanitized_standards = []
-        # FIXED: Improved regex to handle standards like NS 3457-7, EN 1991-1-4, etc.
-        # Pattern breakdown:
-        # ^[A-Z]{1,10}        - Prefix letters (NS, ISO, EN, etc.)
-        # [\s\-]?             - Optional space or hyphen separator
-        # [0-9A-Z\-]{1,15}    - Main number part (can include hyphens and letters)
-        # (?:[\:\+][0-9A-Z\-]{1,20})? - Optional suffix like :2018 or +A1
-        standard_pattern = r'^[A-Z]{1,10}[\s\-]?[0-9A-Z\-]{1,15}(?:[\:\+][0-9A-Z\-]{1,20})?$'
+        # FIXED: Improved regex to handle multi-part prefixes (NS-EN, EN ISO, ISO/IEC), spaces/hyphens, and suffixes
+        # Examples matched: "NS-EN 13141-8:2006", "EN 1991-1-4", "ISO/IEC 27001:2013", "NS 11001-1", "EN ISO 1461"
+        # Prefix: 1-4 segments of 1-5 letters separated by space, hyphen or slash (e.g. NS-EN, EN ISO, ISO/IEC)
+        # Number part: alphanumeric with hyphens (e.g. 13141-8, 1991-1-4)
+        # Optional suffix: :YEAR or +A1 etc.
+        standard_pattern = r'^[A-Z]{1,5}(?:[\s/\-][A-Z]{1,5}){0,3}\s+[0-9A-Z\-]{1,20}(?:[:\+][0-9A-Z\-]{1,20})?$'
         
         for std in standards:
             if not isinstance(std, str):
@@ -105,6 +104,22 @@ class InputValidator:
                 sanitized_standards.append(std_clean)
         
         return ValidationResult(True, sanitized_input=sanitized_standards)
+
+    @staticmethod
+    def extract_standards_from_text(text: str) -> List[str]:
+        """Extract likely standard numbers from arbitrary text using the same pattern."""
+        if not text or not isinstance(text, str):
+            return []
+        pattern = re.compile(r'[A-Z]{1,5}(?:[\s/\-][A-Z]{1,5}){0,3}\s+[0-9A-Z\-]{1,20}(?:[:\+][0-9A-Z\-]{1,20})?')
+        matches = pattern.findall(text.upper())
+        # Deduplicate preserving order
+        seen = set()
+        result: List[str] = []
+        for m in matches:
+            if m not in seen and len(m) <= 50:
+                seen.add(m)
+                result.append(m)
+        return result
 
 class FlowManager:
     """Main flow manager for StandardGPT query processing"""
@@ -127,14 +142,6 @@ class FlowManager:
     async def process_query(self, question: str, conversation_memory: str = "0", debug: bool = True) -> Dict[str, Any]:
         """
         Enhanced query processing with intelligent optimization and caching
-        
-        Args:
-            question: User's question
-            conversation_memory: Formatted conversation memory
-            debug: Enable debug logging
-            
-        Returns:
-            dict: Complete processing result with answer and metadata
         """
         start_time = time.time()
         result = {}
@@ -180,7 +187,6 @@ class FlowManager:
             # PHASE 1: Parallel optimization and analysis (OPTIMIZED WITH CACHING)
             debug_output.append("\n=== PARALLEL OPTIMIZATION & ANALYSIS PHASE ===")
             
-            # Use the new async prompt manager with intelligent caching
             optimization_task = self.prompt_manager.optimize_semantic(sanitized_question, conversation_memory)
             analysis_task = self.prompt_manager.analyze_question(sanitized_question, conversation_memory)
             
@@ -195,23 +201,18 @@ class FlowManager:
             debug_output.append("\n=== EXTRACTION PHASE (POST-ANALYSIS) ===")
             
             if analysis.lower() == "memory":
-                # Memory route - extract from memory context
                 memory_terms = await self.prompt_manager.extract_from_memory(sanitized_question, conversation_memory)
-                
-                # Enhanced memory handling - check if extraction was successful
                 if isinstance(memory_terms, str):
                     memory_terms = [s.strip() for s in memory_terms.split(",") if s.strip()]
                 elif not isinstance(memory_terms, list):
                     memory_terms = []
                 
-                # CRITICAL: If memory extraction fails or returns empty, fall back to textual search
                 if not memory_terms or len(memory_terms) == 0:
                     debug_output.append(f"⚠️ Memory extraction returned empty - falling back to textual search")
                     if debug:
                         print(f"⚠️ Memory extraction failed: {memory_terms}")
                         print(f"   Conversation memory: '{conversation_memory[:100]}...'")
-                    analysis = "without"  # Override analysis to use textual search
-                    # Don't set route here yet - it will be set later in routing phase
+                    analysis = "without"
                     standard_numbers = []
                     result["memory_terms"] = []
                     result["memory_fallback"] = True
@@ -223,25 +224,35 @@ class FlowManager:
             else:
                 # Standard routes - extract standard numbers
                 standard_numbers = await self.prompt_manager.extract_standard_numbers(sanitized_question)
-                
-                # Handle string vs list response from extraction
                 if isinstance(standard_numbers, str):
                     standard_numbers = [s.strip() for s in standard_numbers.split(",") if s.strip()]
                 elif not isinstance(standard_numbers, list):
                     standard_numbers = []
+                
+                # Fallback: if none extracted from current question and route is likely including,
+                # attempt to extract from conversation memory
+                if (not standard_numbers or len(standard_numbers) == 0) and analysis.lower() == "including":
+                    mem_candidates = self.validator.extract_standards_from_text(conversation_memory)
+                    if debug:
+                        print(f"🔎 Fallback extracted from memory: {mem_candidates}")
+                    if mem_candidates:
+                        # validate and use
+                        mem_val = self.validator.validate_standard_numbers(mem_candidates)
+                        if mem_val.sanitized_input:
+                            standard_numbers = mem_val.sanitized_input
+                            debug_output.append(f"✓ Using standards from memory: {standard_numbers}")
                 
                 memory_terms = []
                 result["memory_terms"] = []
                 debug_output.append(f"✓ Extracted {len(standard_numbers)} standard number(s): {standard_numbers}")
             
             # Validate extracted terms (only if memory route is still active)
-            if analysis.lower() == "memory":  # Only validate if still memory analysis
+            if analysis.lower() == "memory":
                 validation_result = self.validator.validate_standard_numbers(memory_terms)
                 if not validation_result.is_valid:
                     debug_output.append(f"⚠️ Memory terms validation failed - falling back to textual search")
                     if debug:
                         print(f"⚠️ Memory validation failed: {validation_result.error_message}")
-                    # Fall back to textual search instead of failing
                     analysis = "without"
                     result["memory_terms"] = []
                     result["memory_fallback"] = True
@@ -249,7 +260,7 @@ class FlowManager:
                 else:
                     sanitized_filter_terms = validation_result.sanitized_input
                     result["memory_terms"] = sanitized_filter_terms
-            elif analysis.lower() != "memory":  # Standard number validation
+            elif analysis.lower() != "memory":
                 validation_result = self.validator.validate_standard_numbers(standard_numbers)
                 if not validation_result.is_valid:
                     error_msg = f"Standard validation failed: {validation_result.error_message}"
@@ -301,7 +312,6 @@ class FlowManager:
             embeddings = None
             debug_output.append("\n=== EMBEDDINGS PHASE ===")
             
-            # Get embeddings for routes that use vector search
             if route in ["without", "personal", "including", "memory"]:
                 try:
                     embeddings = self.elasticsearch_client.get_embeddings_from_api(optimized, debug)
@@ -333,16 +343,35 @@ class FlowManager:
                 debug_output.append(f"✓ Built memory query for {len(result['memory_terms'])} term(s)")
                 
             elif route == "including":
-                result["query_object"] = self.query_builder.build_filter_query(
-                    result["standard_numbers"], 
-                    sanitized_question, 
-                    result["embeddings"], 
-                    debug
-                )
-                debug_output.append(f"✓ Built filter query for {len(result['standard_numbers'])} standard(s)")
+                # Robustly determine standards to filter by
+                candidate_standards = result.get("standard_numbers", [])
+                if not candidate_standards:
+                    candidate_standards = standard_numbers if 'standard_numbers' in locals() else []
+
+                validation_again = self.validator.validate_standard_numbers(candidate_standards)
+                sanitized_list = validation_again.sanitized_input if validation_again and validation_again.sanitized_input is not None else []
+
+                if not sanitized_list:
+                    debug_output.append("⚠️ No valid standards for filter query - falling back to textual search")
+                    optimized_text = await self.prompt_manager.optimize_textual(sanitized_question, conversation_memory)
+                    result["query_object"] = self.query_builder.build_textual_query(
+                        optimized_text,
+                        result["embeddings"],
+                        debug
+                    )
+                    route = "without"
+                    result["route_taken"] = route
+                else:
+                    result["standard_numbers"] = sanitized_list
+                    result["query_object"] = self.query_builder.build_filter_query(
+                        sanitized_list,
+                        sanitized_question,
+                        result["embeddings"],
+                        debug
+                    )
+                    debug_output.append(f"✓ Built filter query for {len(result['standard_numbers'])} standard(s): {result['standard_numbers']}")
                 
             elif route == "without":
-                # Use the optimized textual optimization with caching
                 optimized_text = await self.prompt_manager.optimize_textual(sanitized_question, conversation_memory)
                 result["query_object"] = self.query_builder.build_textual_query(
                     optimized_text, 
@@ -372,6 +401,18 @@ class FlowManager:
             result["chunks"] = chunks
             
             hits = elasticsearch_response.get('hits', {}).get('hits', [])
+            # Fallback: if including route yielded zero hits, retry with textual query
+            if route == "including" and (not hits or len(hits) == 0):
+                debug_output.append("⚠️ Including returned 0 hits - retrying with textual query fallback")
+                optimized_text = await self.prompt_manager.optimize_textual(sanitized_question, conversation_memory)
+                result["query_object"] = self.query_builder.build_textual_query(
+                    optimized_text,
+                    result["embeddings"],
+                    debug
+                )
+                elasticsearch_response = self.elasticsearch_client.search(result["query_object"], debug)
+                result["elasticsearch_response"] = elasticsearch_response
+                hits = elasticsearch_response.get('hits', {}).get('hits', [])
             debug_output.append(f"✓ Search completed: {len(hits)} hits returned")
             
             # PHASE 7: Generate answer (OPTIMIZED WITH CACHING)
@@ -388,13 +429,11 @@ class FlowManager:
                 print(f"   📄 Memory content: '{conversation_memory[:500]}{'...' if len(conversation_memory) > 500 else ''}'")
                 print(f"   🔍 Memory is valid: {conversation_memory != '0' and len(conversation_memory.strip()) > 0}")
             
-            # Use the optimized answer generation with intelligent chunk management
             answer = await self.prompt_manager.generate_answer(sanitized_question, chunks, conversation_memory)
             result["answer"] = answer
             
             debug_output.append(f"✓ Final answer generated ({len(answer)} characters)")
             
-            # Update performance statistics
             processing_time = time.time() - start_time
             self.performance_stats["total_queries"] += 1
             self.performance_stats["avg_processing_time"] = (
@@ -402,15 +441,12 @@ class FlowManager:
                 / self.performance_stats["total_queries"]
             )
             
-            # PHASE 8: Prepare final result
             result.update({
                 "processing_time": processing_time,
                 "debug": "\n".join(debug_output) if debug else "",
                 "success": True,
                 "cache_stats": self.prompt_manager.get_cache_stats(),
                 "elasticsearch_stats": self.elasticsearch_client.get_cache_stats(),
-                
-                # Token configuration information
                 "token_config": {
                     "max_tokens_configured": 4000,
                     "temperature_configured": 0.0,
@@ -436,52 +472,24 @@ class FlowManager:
                 "success": False
             }
 
-    def get_comprehensive_stats(self) -> Dict[str, Any]:
-        """Get comprehensive performance and cache statistics"""
-        prompt_stats = self.prompt_manager.get_cache_stats()
-        es_stats = self.elasticsearch_client.get_cache_stats()
-        
-        return {
-            "performance": self.performance_stats,
-            "prompt_cache": prompt_stats,
-            "elasticsearch": es_stats,
-            "system_efficiency": {
-                "avg_processing_time": self.performance_stats["avg_processing_time"],
-                "prompt_cache_hit_rate": prompt_stats.get("hit_rate_percent", 0),
-                "embedding_cache_utilization": es_stats.get("embedding_cache", {}).get("utilization_percent", 0)
-            }
-        }
-
     async def process_query_with_sse(self, question: str, conversation_memory: str = "0", session_id: str = None, debug: bool = True) -> Dict[str, Any]:
         """
         Process query med SSE progress updates
-        
-        Args:
-            question: User's question
-            conversation_memory: Formatted conversation memory string
-            session_id: SSE session ID for progress updates
-            debug: Enable debug output
-            
-        Returns:
-            dict: Complete processing result with answer
         """
         # Import lokalt for å unngå sirkulære imports
         try:
             from src.sse_manager import sse_manager, ProgressStage
         except ImportError as e:
             self.logger.error(f"Failed to import sse_manager: {e}")
-            # Fallback til vanlig processing uten SSE
             return await self.process_query(question, conversation_memory, debug)
         
         start_time = time.time()
         result = {"answer": "Kunne ikke generere svar"}
         
         try:
-            # STEG 1: Start
             if session_id:
                 sse_manager.send_progress(session_id, ProgressStage.STARTED, "Starter behandling av spørsmål...", 5, "🚀")
             
-            # STEG 2: Validering
             if session_id:
                 sse_manager.send_progress(session_id, ProgressStage.VALIDATION, "Validerer inndata...", 10, "🔒")
             
@@ -493,10 +501,6 @@ class FlowManager:
             
             sanitized_question = validation_result.sanitized_input
             
-            # Validation completed - continue to next step
-            # Removed progress update to avoid jumping to 100%
-            
-            # STEG 3: Analyse
             if session_id:
                 sse_manager.send_progress(session_id, ProgressStage.ANALYSIS, "Analyserer spørsmål...", 15, "🔍")
             
@@ -507,14 +511,9 @@ class FlowManager:
             result["optimized"] = optimized
             result["analysis"] = analysis
             
-            # Analysis completed - continue to next step
-            # Removed progress update to avoid jumping to 100%
-            
-            # STEG 4: Extraktion
             if session_id:
                 sse_manager.send_progress(session_id, ProgressStage.EXTRACTION, "Trekker ut standarder...", 25, "📊")
             
-            # Bruk eksisterende logikk fra process_query
             if analysis.lower() == "memory":
                 memory_terms = await self.prompt_manager.extract_from_memory(sanitized_question, conversation_memory)
                 standard_numbers = []
@@ -526,10 +525,19 @@ class FlowManager:
                     standard_numbers = [s.strip() for s in standard_numbers.split(',') if s.strip()]
                 elif not isinstance(standard_numbers, list):
                     standard_numbers = []
+
+                if (not standard_numbers or len(standard_numbers) == 0) and analysis.lower() == "including":
+                    mem_candidates = self.validator.extract_standards_from_text(conversation_memory)
+                    if mem_candidates:
+                        mem_val = self.validator.validate_standard_numbers(mem_candidates)
+                        if mem_val.sanitized_input:
+                            standard_numbers = mem_val.sanitized_input
+                            if session_id:
+                                sse_manager.send_progress(session_id, ProgressStage.EXTRACTION, f"Bruker minne-standarder: {', '.join(standard_numbers)}", 28, "🧠")
+                
                 memory_terms = []
                 result["memory_terms"] = []
                 
-                # Determine route
                 if analysis.lower() == "including" and standard_numbers and len(standard_numbers) > 0:
                     route = "including"
                 elif "personal" in analysis.lower() or "personalhåndbok" in analysis.lower():
@@ -542,15 +550,12 @@ class FlowManager:
             result["extracted_standards"] = standard_numbers
             result["route_taken"] = route
             
-            # STEG 5: Routing
             if session_id:
                 sse_manager.send_progress(session_id, ProgressStage.ROUTING, "Velger søkestrategi...", 35, "🛣️")
             
-            # STEG 6: Embeddings (nytt steg)
             if session_id:
                 sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Genererer embeddings...", 45, "🧮")
             
-            # Generate embeddings
             embeddings = self.elasticsearch_client.get_embeddings_from_api(optimized, debug)
             if not embeddings:
                 error_msg = "Kunne ikke generere embeddings"
@@ -559,11 +564,9 @@ class FlowManager:
                 return {"answer": error_msg, "error": True}
             result["embeddings"] = embeddings
             
-            # STEG 7: Query Building (nytt steg)
             if session_id:
                 sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Bygger søkespørring...", 55, "🔧")
             
-            # Build query based on route
             if route == "memory":
                 query_object = self.query_builder.build_memory_query(
                     result["memory_terms"], 
@@ -572,14 +575,13 @@ class FlowManager:
                     debug
                 )
             elif route == "including":
-                # Validate standard numbers first
                 validation_result = self.validator.validate_standard_numbers(standard_numbers)
                 if not validation_result.is_valid:
                     error_msg = f"Standard validation failed: {validation_result.error_message}"
                     if session_id:
                         sse_manager.send_error(session_id, error_msg)
                     return {"answer": error_msg, "error": True}
-                    
+                
                 query_object = self.query_builder.build_filter_query(
                     validation_result.sanitized_input, 
                     sanitized_question, 
@@ -602,14 +604,11 @@ class FlowManager:
             
             result["query_object"] = query_object
             
-            # STEG 8: Elasticsearch Search (nytt steg)
             if session_id:
                 self.logger.info(f"📡 Sending search progress to session {session_id}")
                 sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Søker i standarddatabase...", 65, "🔎")
-                # Mark routing as completed - strategy selected
                 sse_manager.send_progress(session_id, ProgressStage.ROUTING, "Søkestrategi valgt!", 80, "🛣️")
             
-            # Execute search
             elasticsearch_response = self.elasticsearch_client.search(query_object, debug)
             if not elasticsearch_response:
                 error_msg = "Elasticsearch søk feilet"
@@ -618,24 +617,17 @@ class FlowManager:
                 return {"answer": error_msg, "error": True}
             
             result["elasticsearch_response"] = elasticsearch_response
-            result["standard_numbers"] = standard_numbers  # Add standard numbers to result
+            result["standard_numbers"] = standard_numbers
             
-            # STEG 9: Format chunks (nytt steg)
             if session_id:
                 sse_manager.send_progress(session_id, ProgressStage.SEARCH, "Formaterer søkeresultater...", 75, "📄")
             
-            # Format chunks
             chunks = self.elasticsearch_client.format_chunks(elasticsearch_response, debug)
             result["chunks"] = chunks
             
-            # Search completed - continue to answer generation
-            # Removed progress update to avoid jumping to 100%
-            
-            # STEG 10: Svar generering
             if session_id:
                 sse_manager.send_progress(session_id, ProgressStage.ANSWER_GENERATION, "Genererer svar...", 100, "✨")
             
-            # Stream the answer generation with fallback - chunks is already defined above
             answer_tokens = []
             try:
                 async for token in self.prompt_manager.generate_answer_stream(
@@ -646,47 +638,21 @@ class FlowManager:
                     session_id
                 ):
                     answer_tokens.append(token)
-                
-                # Combine all tokens to get final answer
                 answer = ''.join(answer_tokens)
-                
-            except Exception as streaming_error:
-                # FALLBACK: If streaming fails, use regular answer generation
-                self.logger.warning(f"Streaming answer generation failed, falling back to regular generation: {streaming_error}")
-                if session_id:
-                    sse_manager.send_progress(session_id, ProgressStage.ANSWER_GENERATION, "Streaming feilet, bruker vanlig generering...", 90, "⚠️")
-                
-                try:
-                    answer = await self.prompt_manager.generate_answer(
-                        sanitized_question, 
-                        chunks, 
-                        conversation_memory
-                    )
-                    self.logger.info(f"Fallback answer generation successful: {len(answer)} characters")
-                except Exception as fallback_error:
-                    # If both fail, return error message but DON'T set error flag
-                    # This allows conversation memory to still be saved
-                    answer = f"Det oppstod en teknisk feil under svargenerering. Prøv å spørre på nytt eller kontakt support hvis problemet vedvarer. (Feil: {str(fallback_error)})"
-                    self.logger.error(f"Both streaming and fallback answer generation failed: {fallback_error}")
+            except Exception:
+                answer = await self.prompt_manager.generate_answer(
+                    sanitized_question, 
+                    chunks, 
+                    conversation_memory
+                )
             
             result["answer"] = answer
             
-            # STEG 11: Fullført
             if session_id:
-                # Answer is complete - final_answer event will be sent by the calling function
                 sse_manager.send_final_answer(session_id, answer)
             
             result["processing_time"] = time.time() - start_time
-            result["success"] = True  # Mark as success even if streaming failed but we got an answer
-            
-            # Add token configuration information
-            result["token_config"] = {
-                "max_tokens_configured": 4000,
-                "temperature_configured": 0.0,
-                "model_used": "gpt-4o",
-                "token_optimization": "MAXIMUM",
-                "temperature_mode": "DETERMINISTIC"
-            }
+            result["success"] = True
             
             return result
             
@@ -700,12 +666,6 @@ class FlowManager:
     def health_check(self, debug: bool = True) -> Dict[str, bool]:
         """
         Check health of all system components
-        
-        Args:
-            debug: Enable debug output
-            
-        Returns:
-            dict: Health status of each component
         """
         health = {
             "elasticsearch": False,
@@ -714,17 +674,13 @@ class FlowManager:
         }
         
         try:
-            # Check Elasticsearch
             health["elasticsearch"] = self.elasticsearch_client.health_check(debug)
-            
-            # Check prompts
             try:
                 test_prompt = self.prompt_manager.prompts.get("analysis")
                 health["prompts"] = test_prompt is not None
             except Exception:
                 health["prompts"] = False
             
-            # Check query builders
             try:
                 health["query_builders"] = self.query_builder.query_objects is not None
             except Exception:

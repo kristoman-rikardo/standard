@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="no">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>StandardGPT Testdashboard</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <style>
+        .container { max-width: 1000px; margin: 32px auto; padding: 16px; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+        textarea, input { width: 100%; font-family: monospace; }
+        textarea { min-height: 120px; }
+        pre { background: #f7f7f7; padding: 12px; white-space: pre-wrap; border-radius: 6px; }
+        .btn { margin-top: 8px; }
+        .muted { color: #6b7280; }
+        .ok { color: #16a34a; }
+        .bad { color: #dc2626; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>StandardGPT Testdashboard</h2>
+        <p class="muted">Hurtigtesting av helse, søk og svargenerering.</p>
+
+        <div class="row">
+            <div class="card">
+                <h3>Helse</h3>
+                <button id="btn-health" class="btn">Sjekk /health</button>
+                <button id="btn-status" class="btn">Sjekk /api/status</button>
+                <pre id="out-health"></pre>
+            </div>
+            <div class="card">
+                <h3>Forhåndsdefinerte tester</h3>
+                <button id="btn-test-special" class="btn">Spesialtegn-test</button>
+                <button id="btn-test-13141" class="btn">NS-EN 13141-8:2006</button>
+                <pre id="out-tests"></pre>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+            <h3>Manuell spørring</h3>
+            <label for="q">Spørsmål</label>
+            <textarea id="q">Hva handler NS-EN 13141-8:2006 om?</textarea>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+                <button id="btn-run-test" class="btn">Kjør test (route/hits/answer_preview)</button>
+                <button id="btn-run-api" class="btn">Kjør API (fullt svar)</button>
+            </div>
+            <h4>Test (GET /api/test/run)</h4>
+            <pre id="out-run"></pre>
+            <h4>API (POST /api/query)</h4>
+            <pre id="out-api"></pre>
+        </div>
+    </div>
+
+    <script>
+    (function(){
+        const oh = document.getElementById('out-health');
+        const ot = document.getElementById('out-tests');
+        const orun = document.getElementById('out-run');
+        const oapi = document.getElementById('out-api');
+        const q = document.getElementById('q');
+        // Persist a session id for consistent memory testing
+        const sidKey = 'stdgpt_test_sid';
+        let sid = localStorage.getItem(sidKey);
+        if (!sid) {
+            sid = `session_${Date.now()}_${Math.random().toString(16).slice(2,10)}`;
+            localStorage.setItem(sidKey, sid);
+        }
+
+        function show(el, data){
+            try { el.textContent = JSON.stringify(data, null, 2); }
+            catch { el.textContent = String(data); }
+        }
+
+        document.getElementById('btn-health').addEventListener('click', async () => {
+            oh.textContent = 'Laster...';
+            try {
+                const r = await fetch('/health');
+                const j = await r.json();
+                show(oh, j);
+            } catch(e){ oh.textContent = String(e); }
+        });
+
+        document.getElementById('btn-status').addEventListener('click', async () => {
+            oh.textContent = 'Laster...';
+            try {
+                const r = await fetch('/api/status');
+                const j = await r.json();
+                show(oh, j);
+            } catch(e){ oh.textContent = String(e); }
+        });
+
+        document.getElementById('btn-test-special').addEventListener('click', async () => {
+            ot.textContent = 'Laster...';
+            const txt = 'NS-EN 13141-8:2006\n\nhva handler om';
+            try {
+                const u = '/api/test/run?q=' + encodeURIComponent(txt);
+                const r = await fetch(u, { headers: { 'X-Session-ID': sid } });
+                const j = await r.json();
+                show(ot, j);
+            } catch(e){ ot.textContent = String(e); }
+        });
+
+        document.getElementById('btn-test-13141').addEventListener('click', async () => {
+            ot.textContent = 'Laster...';
+            const txt = 'Hva handler NS-EN 13141-8:2006 om?';
+            try {
+                const u = '/api/test/run?q=' + encodeURIComponent(txt);
+                const r = await fetch(u, { headers: { 'X-Session-ID': sid } });
+                const j = await r.json();
+                show(ot, j);
+            } catch(e){ ot.textContent = String(e); }
+        });
+
+        document.getElementById('btn-run-test').addEventListener('click', async () => {
+            orun.textContent = 'Laster...';
+            try {
+                const u = '/api/test/run?q=' + encodeURIComponent(q.value);
+                const r = await fetch(u, { headers: { 'X-Session-ID': sid } });
+                const j = await r.json();
+                show(orun, j);
+            } catch(e){ orun.textContent = String(e); }
+        });
+
+        document.getElementById('btn-run-api').addEventListener('click', async () => {
+            oapi.textContent = 'Laster...';
+            try {
+                const r = await fetch('/api/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: q.value })
+                });
+                const j = await r.json();
+                show(oapi, j);
+            } catch(e){ oapi.textContent = String(e); }
+        });
+    })();
+    </script>
+</body>
+</html>
+
+

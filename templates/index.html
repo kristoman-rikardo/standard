@@ -756,10 +756,12 @@
                 console.log('🆔 Using session ID:', currentSessionId);
                 console.log('👤 Using user ID:', currentUserId);
                 
-                // VIKTIG: Generer ALLTID ny session ID for hvert spørsmål for å unngå blanding av svar
-                currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}_${Math.floor(Math.random() * 10000)}`;
-                localStorage.setItem('standardgpt_session_id', currentSessionId);
-                console.log('🆔 Generated fresh session ID for new question:', currentSessionId);
+                // VIKTIG: Behold samme session ID for minne i samtalen
+                if (!currentSessionId) {
+                    currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 8)}_${Math.floor(Math.random() * 10000)}`;
+                    localStorage.setItem('standardgpt_session_id', currentSessionId);
+                    console.log('🆔 Initialized session ID:', currentSessionId);
+                }
                 
                 // Start streaming request
                 const response = await fetch('/api/query/stream', {

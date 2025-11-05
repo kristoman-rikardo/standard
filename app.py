@@ -308,7 +308,15 @@ def before_request():
     try:
         # Skip protection for API, static, login/logout and health/status endpoints
         open_paths = ['/login', '/logout', '/health', '/api/status', '/favicon.ico']
+        # Feature-flag test dashboard openness
+        enable_test_dash = current_app.config.get('ENABLE_TEST_DASHBOARD', True)
+        if enable_test_dash:
+            open_paths.extend(['/test', '/test/special-chars'])
         if request.path.startswith('/api') or request.endpoint == 'static' or request.path in open_paths:
+            return
+
+        # Allow localhost to access UI without password in development
+        if request.remote_addr in ('127.0.0.1', '::1'):
             return
 
         cookie_name = app.config.get('UI_AUTH_COOKIE_NAME', 'ui_auth')
@@ -344,6 +352,16 @@ def after_request(response):
 def index():
     """Serve the main application page"""
     return render_template('index.html')
+
+@app.route('/test/special-chars')
+def special_chars_test():
+    """Simple test page to verify special character handling"""
+    return render_template('special_chars_test.html')
+
+@app.route('/test')
+def test_app():
+    """Comprehensive test dashboard for the application"""
+    return render_template('test_app.html')
 
 @app.route('/api/status')
 def api_status():
@@ -728,6 +746,83 @@ def cache_stats():
         'session_count': len(conversation_sessions),
         'total_conversations': sum(len(sessions) for sessions in conversation_sessions.values())
     })
+
+
+@app.route('/api/test/enable', methods=['POST'])
+def api_test_enable():
+    """Enable public access to /test and /test/special-chars (localhost only)"""
+    if request.remote_addr not in ('127.0.0.1', '::1'):
+        return jsonify({'error': 'Forbidden'}), 403
+    current_app.config['ENABLE_TEST_DASHBOARD'] = True
+    return jsonify({'message': 'Test dashboard opened', 'enabled': True})
+
+@app.route('/api/test/disable', methods=['POST'])
+def api_test_disable():
+    """Disable public access to /test and /test/special-chars (localhost only)"""
+    if request.remote_addr not in ('127.0.0.1', '::1'):
+        return jsonify({'error': 'Forbidden'}), 403
+    current_app.config['ENABLE_TEST_DASHBOARD'] = False
+    return jsonify({'message': 'Test dashboard closed', 'enabled': False})
+
+@app.route('/api/test/run')
+def api_test_run():
+    """Debug endpoint: run a full query with a URL param and return essentials"""
+    try:
+        q = request.args.get('q', '').strip()
+        if not q:
+            return jsonify({'error': 'Missing q parameter'}), 400
+
+        # Validate using the same Pydantic model
+        try:
+            query_input = QueryRequest(**{'question': q})
+            sanitized_question = query_input.question
+        except Exception as e:
+            return jsonify({'error': f'Validation failed: {e}'}), 400
+
+        if not flow_manager:
+            return jsonify({'error': 'FlowManager not available'}), 503
+
+        # Session + memory handling for testing
+        session_id = get_session_id(request)
+        conversation_memory = get_conversation_memory(session_id)
+
+        # Run flow synchronously with actual session memory
+        result = asyncio.run(flow_manager.process_query(
+            sanitized_question,
+            conversation_memory=conversation_memory,
+            debug=True
+        ))
+
+        hits = result.get('elasticsearch_response', {}).get('hits', {}).get('hits', [])
+        top = hits[0]['_source'] if hits else {}
+        chunks = result.get('chunks', '')
+        answer = result.get('answer', '')
+
+        # Optionally save memory (default true)
+        save_memory = request.args.get('save', 'true').lower() != 'false'
+        if save_memory and answer and sanitized_question:
+            try:
+                update_conversation_memory(session_id, sanitized_question, answer)
+            except Exception as e:
+                app.logger.warning(f"Test run memory save failed: {e}")
+
+        return jsonify({
+            'route': result.get('route_taken', 'unknown'),
+            'standards': result.get('standard_numbers', []),
+            'hits_count': len(hits),
+            'top_hit': {
+                'reference': top.get('reference'),
+                'page': top.get('page'),
+                'text_preview': (top.get('text') or '')[:500]
+            } if top else None,
+            'chunks_preview': chunks[:1200],
+            'answer_preview': answer[:1200],
+            'session_id': session_id,
+            'conversation_entries': len(conversation_sessions.get(session_id, []))
+        })
+    except Exception as e:
+        app.logger.error(f"/api/test/run error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/stream/<session_id>')
