@@ -425,8 +425,8 @@ class PromptManager:
             str: Final answer
         """
         try:
-            # Intelligent chunk truncation to avoid token limits
-            max_chunk_length = 6000  # Reduce to speed up generation
+            # Intelligent chunk truncation to avoid token limits (allow much larger context windows)
+            max_chunk_length = 300000
             if len(chunks) > max_chunk_length:
                 # Truncate but try to keep complete chunks
                 chunk_sections = chunks.split('\n\n')
@@ -530,8 +530,8 @@ class PromptManager:
             str: Individual tokens as they're generated
         """
         try:
-            # Intelligent chunk truncation to avoid token limits
-            max_chunk_length = 6000  # Reduced to speed up streaming
+            # Intelligent chunk truncation to avoid token limits (streaming)
+            max_chunk_length = 300000
             if len(chunks) > max_chunk_length:
                 # Truncate but try to keep complete chunks
                 chunk_sections = chunks.split('\n\n')
@@ -555,7 +555,7 @@ class PromptManager:
             
             # Use MAXIMUM token configuration for streaming
             config = PromptConfig(
-                max_tokens=1200,  # Reduced for latency
+                max_tokens=1200,  # Keep answer size; input context increased above
                 temperature=0.0,  # Deterministic streaming
                 ttl_seconds=900,
                 system_message="You are a knowledgeable assistant providing detailed technical answers based on Norwegian standards. Always provide comprehensive, accurate information with specific details from the provided context. Use the full token limit to provide thorough, detailed responses."

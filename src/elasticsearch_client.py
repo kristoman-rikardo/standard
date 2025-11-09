@@ -428,7 +428,7 @@ class ElasticsearchClient:
             
             chunks = []
             total_text_length = 0
-            max_total_length = 200000  # Limit total length for performance
+            max_total_length = 300000  # Align with prompt max input context
             
             for i, hit in enumerate(hits, 1):
                 if total_text_length > max_total_length:
@@ -442,9 +442,9 @@ class ElasticsearchClient:
                 reference = source.get("reference", source.get("title", "Ukjent referanse"))
                 page = source.get("page", source.get("page_number", "Ukjent side"))
                 
-                # Intelligent truncation for very long texts
-                if len(text) > 2000:
-                    text = text[:1800] + "..."
+                # Intelligent truncation for very long texts (allow more per chunk)
+                if len(text) > 3000:
+                    text = text[:2500] + "..."
                 
                 chunk = (
                     f"Dokument {i} (score: {score:.2f}):\n"

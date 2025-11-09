@@ -17,7 +17,7 @@ def create_query(text: str, embeddings: list = None):
     # Build query exactly as specified by user for personal handbook
     if embeddings and any(x != 0.0 for x in embeddings):
         query_object = {
-            "size": 80,
+            "size": 400,
             "query": {
                 "script_score": {
                     "query": {
@@ -45,7 +45,7 @@ def create_query(text: str, embeddings: list = None):
     else:
         # Fallback without embeddings - still needs the filter structure
         query_object = {
-            "size": 80,
+            "size": 400,
             "query": {
                 "bool": {
                     "filter": {

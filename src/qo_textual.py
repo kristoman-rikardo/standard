@@ -17,7 +17,7 @@ def create_query(text: str, embeddings: list = None):
     # If we have valid embeddings, use script_score, otherwise use simple multi_match
     if embeddings and any(x != 0.0 for x in embeddings):
         query_object = {
-            "size": 60,
+            "size": 400,
             "query": {
                 "script_score": {
                     "query": {
@@ -39,7 +39,7 @@ def create_query(text: str, embeddings: list = None):
     else:
         # Fallback to simple multi_match query without embeddings
         query_object = {
-            "size": 60,
+            "size": 400,
             "query": {
                 "multi_match": {
                     "query": text,

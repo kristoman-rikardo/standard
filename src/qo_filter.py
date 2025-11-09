@@ -104,11 +104,33 @@ def create_query(standard_numbers: list, question: str, embeddings: list = None)
     wildcard_queries = []
     for standard in standard_numbers:
         for variant in _standard_variants(standard):
+            v = variant.strip()
+            if not v:
+                continue
+            # Match reference keyword strongly
             wildcard_queries.append({
                 "wildcard": {
                     "reference.keyword": {
-                        "value": f"*{variant.strip()}*",
+                        "value": f"*{v}*",
                         "case_insensitive": True
+                    }
+                }
+            })
+            # Also try to match in analyzed fields (lower boost)
+            wildcard_queries.append({
+                "match_phrase": {
+                    "reference": {
+                        "query": v,
+                        "boost": 2.0
+                    }
+                }
+            })
+            # And text content as a last resort (lowest boost)
+            wildcard_queries.append({
+                "match_phrase": {
+                    "text": {
+                        "query": v,
+                        "boost": 1.0
                     }
                 }
             })
@@ -116,7 +138,7 @@ def create_query(standard_numbers: list, question: str, embeddings: list = None)
     # If we have valid embeddings, use script_score, otherwise use simple bool query
     if embeddings and any(x != 0.0 for x in embeddings):
         query_object = {
-            "size": 40,  # Reduced for latency; still enough for quality
+            "size": 400,
             "query": {
                 "script_score": {
                     "query": {
@@ -138,7 +160,7 @@ def create_query(standard_numbers: list, question: str, embeddings: list = None)
     else:
         # Fallback to simple bool query without embeddings
         query_object = {
-            "size": 40,  # Reduced for latency; still enough for quality
+            "size": 400,
             "query": {
                 "bool": {
                     "should": wildcard_queries,
